@@ -18,7 +18,10 @@ export interface TicketListFilter {
  * Phase 3). `save` takes the caller's `expectedVersion` and MUST return a
  * `CONFLICT` `DomainError` (not throw, not silently overwrite) when the
  * repository's current stored version no longer matches — the optimistic
- * concurrency control spec-v2 requires (override #5).
+ * concurrency control spec-v2 requires (override #5). Convention:
+ * `expectedVersion: 0` means "no ticket with this id may already exist"
+ * (used by `CreateTicket`, task 2.12, for the first save of a new ticket,
+ * whose own `Ticket.version` is already `1`).
  */
 export interface TicketRepository {
   getById(id: TicketId): Promise<Ticket | null>;
