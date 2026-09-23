@@ -9,7 +9,7 @@ function baseTicket(overrides: Partial<Ticket> = {}): Ticket {
     state: "PendingUserConfirmation",
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
-    description: "vpn is down",
+    description: "vpn is down" as Ticket["description"],
     diagnostics: [],
     systemState: { accountUnlockSimulated: false, resetLinkIssued: false },
     history: [],

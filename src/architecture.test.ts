@@ -46,6 +46,7 @@ const FORBIDDEN_DOMAIN_SPECIFIERS = [
   "node:fs",
   "node:child_process",
   "node:net",
+  "node:crypto",
 ];
 
 describe("architecture: domain import rule", () => {
@@ -156,6 +157,78 @@ describe("architecture: domain third-party import allowlist (ADR 0011)", () => {
         const isRelative = specifier.startsWith(".");
         const isAllowedThirdParty = ALLOWED_DOMAIN_THIRD_PARTY_SPECIFIERS.includes(specifier);
         if (!isRelative && !isAllowedThirdParty) {
+          offenders.push(`${file} imports "${specifier}"`);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+});
+
+/**
+ * ADR 0013 (amends ADR 0012's mechanism): per-capability infrastructure
+ * adapters replaced the single global `src/infrastructure/`, so the
+ * confinement path is now `src/<capability>/infrastructure/**` (and,
+ * eventually, `src/app/**` for cross-cutting bootstrapping), not a fixed
+ * `src/infrastructure/crypto/**` path. Confinement also grows from just
+ * `node:crypto` to every Node builtin an adapter will need: an adapter
+ * reaching for the filesystem, child processes, or the network is exactly
+ * as infrastructure-only as one reaching for crypto.
+ */
+const CONFINED_NODE_BUILTINS = [
+  "node:crypto",
+  "node:fs",
+  "node:child_process",
+  "node:net",
+  "node:dns",
+  "node:http",
+  "node:https",
+];
+
+/** True for a path under any capability's `infrastructure/**` or under `src/app/**`. */
+function isInfrastructureOrAppPath(file: string): boolean {
+  return /(^|\/)infrastructure\//.test(file) || /^src\/app\//.test(file);
+}
+
+describe("architecture: infrastructure-only Node builtins are confined to */infrastructure/** or src/app/** (ADR 0013)", () => {
+  it("no file outside a capability's infrastructure/** or src/app/** imports node:crypto, node:fs, node:child_process, node:net, node:dns, or node:http(s)", () => {
+    const files = listFiles("src").filter((f) => !isInfrastructureOrAppPath(f));
+    expect(files.length).toBeGreaterThan(0);
+
+    const offenders: string[] = [];
+    for (const file of files) {
+      const specifiers = importSpecifiers(readFileSync(file, "utf8"));
+      for (const specifier of specifiers) {
+        if (CONFINED_NODE_BUILTINS.includes(specifier)) {
+          offenders.push(`${file} imports "${specifier}"`);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+});
+
+/**
+ * ADR 0013: `domain/` and `application/` never depend on a capability's
+ * `infrastructure/` (they depend on `ports/` instead, wired at the
+ * composition root), and `src/shared/` — imported by every domain — never
+ * imports a capability's `infrastructure/` either, since that would let
+ * infrastructure leak into the most-depended-on module in the codebase.
+ */
+describe("architecture: domain/application/shared never import a capability's infrastructure/ (ADR 0013)", () => {
+  it("no file under domain/, application/, or src/shared/** imports an infrastructure/ path", () => {
+    const files = listFiles("src").filter(
+      (f) => /(^|\/)(domain|application)\//.test(f) || /^src\/shared\//.test(f),
+    );
+    expect(files.length).toBeGreaterThan(0);
+
+    const offenders: string[] = [];
+    for (const file of files) {
+      const specifiers = importSpecifiers(readFileSync(file, "utf8"));
+      for (const specifier of specifiers) {
+        const isInfrastructure =
+          specifier.includes("/infrastructure/") || specifier.endsWith("/infrastructure");
+        if (isInfrastructure) {
           offenders.push(`${file} imports "${specifier}"`);
         }
       }
