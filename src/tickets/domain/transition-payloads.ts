@@ -2,16 +2,18 @@ import { z } from "zod";
 import {
   CATEGORY_SUBCATEGORIES,
   isSubcategoryOfCategory,
+  type Category,
+  type Subcategory,
 } from "./categories.js";
 
 const CATEGORY_VALUES = Object.keys(CATEGORY_SUBCATEGORIES) as [
-  keyof typeof CATEGORY_SUBCATEGORIES,
-  ...Array<keyof typeof CATEGORY_SUBCATEGORIES>,
+  Category,
+  ...Category[],
 ];
 
 const SUBCATEGORY_VALUES = Object.values(CATEGORY_SUBCATEGORIES).flat() as [
-  string,
-  ...string[],
+  Subcategory,
+  ...Subcategory[],
 ];
 
 const LEVEL_VALUES = ["high", "medium", "low"] as const;
@@ -34,11 +36,7 @@ export const TriagedPayloadSchema = z
   })
   .strict()
   .refine(
-    (payload) =>
-      isSubcategoryOfCategory(
-        payload.category,
-        payload.subcategory as never,
-      ),
+    (payload) => isSubcategoryOfCategory(payload.category, payload.subcategory),
     {
       path: ["subcategory"],
       message: "subcategory does not belong to the supplied category",
