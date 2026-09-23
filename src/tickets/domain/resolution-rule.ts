@@ -20,10 +20,13 @@ const FORTY_EIGHT_HOURS_MS = 48 * 60 * 60 * 1000;
  * A ticket is low-risk, for the 48-hour auto-timeout, only when its most
  * recently applied remediation was drawn from the allowlist AND its
  * priority is P3 AND its category is not access-identity (spec-v2
- * "Resolution Rule", override #6). The only code path that will ever set
- * `ticket.remediation` (the Phase 2 `apply_remediation` tool) enforces
- * allowlist membership before applying, so presence of `remediation` here
- * already implies "drawn from the allowlist".
+ * "Resolution Rule", override #6). Re-verified now that `ApplyRemediation`
+ * (task 2.16, `src/diagnostics/application/apply-remediation.ts`) is the
+ * only code path that ever sets `ticket.remediation`: it only reaches the
+ * assignment after finding the referenced run's `decision.kind ===
+ * "remediate"` AND resolving `decision.entryId` against `ALLOWLIST`
+ * itself, so presence of `remediation` here still soundly implies "drawn
+ * from the allowlist" — no other writer exists.
  */
 function isLowRisk(ticket: Ticket): boolean {
   return (

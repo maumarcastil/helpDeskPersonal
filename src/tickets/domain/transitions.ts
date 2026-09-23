@@ -35,6 +35,14 @@ export interface TransitionContext {
    * module stays a pure function of its explicit inputs.
    */
   readonly evidenceRun?: EvidenceRun;
+  /**
+   * The pseudonymized `{ref, display}` pair for a `Triaged` transition's
+   * `affectedUser`, computed by the use case via the `Pseudonymizer` port
+   * (task 2.13). Falls back to storing the raw supplied identifier in both
+   * fields when omitted (Phase 1 domain-level tests, which do not exercise
+   * the redaction capability).
+   */
+  readonly affectedUserPseudonym?: { readonly ref: string; readonly display: string };
 }
 
 export interface TransitionInput {
@@ -97,9 +105,10 @@ function applyTriaged(ticket: Ticket, payload: TriagedPayload, ctx: TransitionCo
       urgency: payload.urgency,
       priority,
       sla: computeSlaDueDates(priority, ctx.now),
-      // Phase 2's pseudonymizeUser tightens ref/display; Phase 1 stores
-      // the raw supplied identifier in both fields.
-      affectedUser: { ref: payload.affectedUser, display: payload.affectedUser },
+      affectedUser: ctx.affectedUserPseudonym ?? {
+        ref: payload.affectedUser,
+        display: payload.affectedUser,
+      },
       impactedService: payload.impactedService,
     },
   };
