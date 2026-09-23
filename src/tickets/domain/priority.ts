@@ -1,5 +1,5 @@
-import { domainError } from "../../shared/domain-error.js";
-import { err, ok, type Result } from "../../shared/result.js";
+import { domainError } from "../../shared/domain/domain-error.js";
+import { err, ok, type Result } from "../../shared/kernel/result.js";
 import type { Level, Priority } from "./ticket.js";
 
 /**
