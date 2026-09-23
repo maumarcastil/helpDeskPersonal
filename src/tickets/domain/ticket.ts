@@ -1,10 +1,4 @@
-import type { Clock } from "../../shared/clock.js";
-import type {
-  AuditId,
-  IdGenerator,
-  RunId,
-  TicketId,
-} from "../../shared/id-generator.js";
+import type { AuditId, RunId, TicketId } from "../../shared/domain/ids.js";
 import type { Category, Subcategory } from "./categories.js";
 import type { TicketState } from "./states.js";
 
@@ -135,18 +129,22 @@ export interface Ticket {
   }>;
 }
 
-export function createNewTicket(
-  description: string,
-  clock: Clock,
-  idGen: IdGenerator,
-): Ticket {
-  const now = clock.now().toISOString();
+/**
+ * Pure constructor: takes the new ticket's id and the current instant as
+ * plain values instead of `IdGenerator`/`Clock` ports, consistent with the
+ * rest of the domain (e.g. `canReopen(t, now)`, `canResolve(t, ..., now)`).
+ * The caller (application layer) resolves the id and the clock reading
+ * through the actual ports before calling this constructor — no domain
+ * file may import from `shared/ports/` (architecture guard).
+ */
+export function createNewTicket(description: string, id: TicketId, now: Date): Ticket {
+  const nowIso = now.toISOString();
   return {
-    id: idGen.ticketId(),
+    id,
     version: 1,
     state: "New",
-    createdAt: now,
-    updatedAt: now,
+    createdAt: nowIso,
+    updatedAt: nowIso,
     description,
     diagnostics: [],
     systemState: {

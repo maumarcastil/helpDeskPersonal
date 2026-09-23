@@ -1,7 +1,7 @@
 import type { z } from "zod";
-import { domainError, type DomainError } from "../../shared/domain-error.js";
-import type { AuditId, RunId } from "../../shared/id-generator.js";
-import { err, ok, type Result } from "../../shared/result.js";
+import { domainError, type DomainError } from "../../shared/domain/domain-error.js";
+import type { AuditId, RunId } from "../../shared/domain/ids.js";
+import { err, ok, type Result } from "../../shared/kernel/result.js";
 import { canReopen } from "./reopen-policy.js";
 import { canResolve, type EvidenceRun } from "./resolution-rule.js";
 import { computePriority } from "./priority.js";

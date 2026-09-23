@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AuditId } from "../../shared/id-generator.js";
+import type { AuditId } from "../../shared/domain/ids.js";
 import type { EvidenceRun } from "./resolution-rule.js";
 import { STATE_RANK, type TicketState } from "./states.js";
 import {
