@@ -49,7 +49,7 @@ describe("canResolve — user-confirmed", () => {
   it("succeeds when the diagnostic re-check passed after remediation.appliedAt", () => {
     const ticket = baseTicket({
       remediation: {
-        action: "vpn-gateway-up",
+        action: "record-service-healthy",
         runId: "run_1" as Ticket["remediation"] extends undefined
           ? never
           : NonNullable<Ticket["remediation"]>["runId"],
@@ -96,7 +96,7 @@ describe("canResolve — user-confirmed", () => {
 describe("canResolve — auto-timeout", () => {
   const lowRiskTicket = baseTicket({
     remediation: {
-      action: "vpn-gateway-up",
+      action: "record-service-healthy",
       runId: "run_1" as never,
       appliedAt: "2026-01-01T00:10:00.000Z",
     },
@@ -135,7 +135,7 @@ describe("canResolve — auto-timeout", () => {
   it("does not apply to a P2 ticket even when allowlisted", () => {
     const p2 = baseTicket({
       remediation: {
-        action: "vpn-gateway-up",
+        action: "record-service-healthy",
         runId: "run_1" as never,
         appliedAt: "2026-01-01T00:10:00.000Z",
       },
@@ -154,7 +154,7 @@ describe("canResolve — auto-timeout", () => {
   it("does not apply to an access-identity P3 ticket even when allowlisted", () => {
     const accessIdentity = baseTicket({
       remediation: {
-        action: "access-reset-idp-up",
+        action: "issue-reset-link-marker",
         runId: "run_1" as never,
         appliedAt: "2026-01-01T00:10:00.000Z",
       },

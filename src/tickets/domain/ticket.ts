@@ -1,3 +1,5 @@
+import type { DiagnosticRun } from "../../diagnostics/domain/diagnostic-run.js";
+import type { RemediationAction } from "../../diagnostics/domain/remediation-allowlist.js";
 import type { RedactedText } from "../../redaction/domain/redacted-text.js";
 import type { AuditId, RunId, TicketId } from "../../shared/domain/ids.js";
 import type { Category, Subcategory } from "./categories.js";
@@ -44,17 +46,6 @@ export type EscalationTarget =
 export type ResolutionBasis = "user-confirmed" | "auto-timeout" | "human-agent";
 export type ConfirmationSource = "user" | "auto-timeout";
 
-/**
- * Opaque reference to a remediation-allowlist entry id. Phase 2's
- * `diagnostics/domain/remediation-allowlist.ts` defines the real closed
- * union; Phase 1 only needs to know remediation, when present, carries
- * *some* identifier — the mere presence of `Ticket.remediation` is what
- * `resolution-rule.ts` treats as "drawn from the allowlist", since the
- * only code path that will ever populate it (the Phase 2 `apply_remediation`
- * tool) enforces allowlist membership before setting it.
- */
-export type RemediationActionRef = string;
-
 export interface Ticket {
   readonly id: TicketId;
   readonly version: number;
@@ -77,17 +68,10 @@ export interface Ticket {
     readonly affectedUser: { readonly ref: string; readonly display: string };
     readonly impactedService: ImpactedService;
   };
-  /**
-   * Bounded to the last 10 entries once populated (Phase 2/3 concern).
-   * Phase 2's `diagnostics/domain/diagnostic-run.ts` supplies the real
-   * `DiagnosticRun` shape; this minimal shape is enough for the
-   * `PendingUserConfirmation -> Escalated`/`-> Resolved` guards Phase 1
-   * exercises via a directly supplied `evidenceRun` parameter instead of
-   * reading this array.
-   */
-  readonly diagnostics: ReadonlyArray<{ readonly runId: RunId; readonly at: string }>;
+  /** Bounded to the last 10 entries (design "Ticket domain" / `Ticket.diagnostics`). */
+  readonly diagnostics: readonly DiagnosticRun[];
   readonly remediation?: {
-    readonly action: RemediationActionRef;
+    readonly action: RemediationAction;
     readonly runId: RunId;
     readonly appliedAt: string;
   };
