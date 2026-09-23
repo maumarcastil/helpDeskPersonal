@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { redact } from "../../redaction/domain/redact.js";
 import type { TicketId } from "../../shared/domain/ids.js";
 import { createNewTicket } from "./ticket.js";
 
@@ -7,7 +8,8 @@ const fixedTicketId = "tkt_fixed" as TicketId;
 
 describe("createNewTicket", () => {
   it("returns a New ticket at version 1 with empty history and default systemState", () => {
-    const ticket = createNewTicket("printer is broken", fixedTicketId, fixedNow);
+    const description = redact("printer is broken").text;
+    const ticket = createNewTicket(description, fixedTicketId, fixedNow);
 
     expect(ticket.state).toBe("New");
     expect(ticket.version).toBe(1);

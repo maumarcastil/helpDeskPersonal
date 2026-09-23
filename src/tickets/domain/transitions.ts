@@ -1,4 +1,5 @@
 import type { z } from "zod";
+import type { RedactedText } from "../../redaction/domain/redacted-text.js";
 import { domainError, type DomainError } from "../../shared/domain/domain-error.js";
 import type { AuditId, RunId } from "../../shared/domain/ids.js";
 import { err, ok, type Result } from "../../shared/kernel/result.js";
@@ -58,6 +59,25 @@ function defineRule<P>(rule: TransitionRule<P>): TransitionRule<unknown> {
   return rule as unknown as TransitionRule<unknown>;
 }
 
+/**
+ * The transition payload schemas (`transition-payloads.ts`) still validate
+ * free-text fields (`summary`, `note`, `resolutionSummary`, `reopenReason`)
+ * as plain wire-format `string`, because they describe what a caller sends
+ * over the wire, before redaction. `Ticket`'s own text fields are typed
+ * `RedactedText` (task 2.1-2.3 tightening, ADR 0008 point 2). Casting at
+ * the point of assignment here is a deliberate, visible bridge: this slice
+ * does not yet have a caller that redacts before invoking `applyTransition`
+ * — that caller is the `TransitionTicket` use case (task 2.13, next
+ * slice), which MUST call `redact()` on these fields before constructing
+ * `TransitionInput.payload`. Flagged as an open issue for that slice: this
+ * cast currently lets an unredacted string through untouched, and task
+ * 2.13's RED tests must prove the use case actually redacts before this
+ * point is reached in a real call path.
+ */
+function asRedacted(text: string): RedactedText {
+  return text as RedactedText;
+}
+
 function applyTriaged(ticket: Ticket, payload: TriagedPayload, ctx: TransitionContext): Ticket {
   const priorityResult = computePriority(payload.severity, payload.urgency);
   if (!priorityResult.ok) {
@@ -69,7 +89,7 @@ function applyTriaged(ticket: Ticket, payload: TriagedPayload, ctx: TransitionCo
   return {
     ...ticket,
     state: "Triaged",
-    summary: payload.summary,
+    summary: asRedacted(payload.summary),
     triage: {
       category: payload.category,
       subcategory: payload.subcategory,
@@ -118,7 +138,7 @@ function applyEscalated(
         }
       : {
           reason: payload.escalationReason,
-          note: payload.note,
+          note: asRedacted(payload.note),
           target: payload.target,
           decisionLogRef: ctx.auditRef,
           at: ctx.now.toISOString(),
@@ -157,7 +177,7 @@ function applyClosed(ticket: Ticket, payload: ClosedPayload, ctx: TransitionCont
     ...ticket,
     state: "Closed",
     closure: {
-      resolutionSummary: payload.resolutionSummary,
+      resolutionSummary: asRedacted(payload.resolutionSummary),
       confirmationSource: payload.confirmationSource,
       closedAt: ctx.now.toISOString(),
     },
@@ -182,7 +202,7 @@ function applyReopened(
     state: "Reopened",
     reopen: {
       count: (ticket.reopen?.count ?? 0) + 1,
-      lastReason: payload.reopenReason,
+      lastReason: asRedacted(payload.reopenReason),
       originalResolutionRef: payload.originalResolutionRef,
       reopenedAt: ctx.now.toISOString(),
     },

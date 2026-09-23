@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-09-23
+- Amended by: 0013 (adapter placement)
 
 ## Context
 

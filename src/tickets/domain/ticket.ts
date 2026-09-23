@@ -1,3 +1,4 @@
+import type { RedactedText } from "../../redaction/domain/redacted-text.js";
 import type { AuditId, RunId, TicketId } from "../../shared/domain/ids.js";
 import type { Category, Subcategory } from "./categories.js";
 import type { TicketState } from "./states.js";
@@ -60,9 +61,8 @@ export interface Ticket {
   readonly state: TicketState;
   readonly createdAt: string;
   readonly updatedAt: string;
-  /** Phase 2 (`redaction` capability) tightens this to `RedactedText`. */
-  readonly description: string;
-  readonly summary?: string;
+  readonly description: RedactedText;
+  readonly summary?: RedactedText;
   readonly relatedTicketId?: TicketId;
   readonly triage?: {
     readonly category: Category;
@@ -94,7 +94,7 @@ export interface Ticket {
   readonly pendingSince?: string;
   readonly escalation?: {
     readonly reason: EscalationReason;
-    readonly note?: string;
+    readonly note?: RedactedText;
     readonly target: EscalationTarget;
     readonly decisionLogRef: AuditId;
     readonly at: string;
@@ -105,13 +105,13 @@ export interface Ticket {
     readonly resolvedAt: string;
   };
   readonly closure?: {
-    readonly resolutionSummary: string;
+    readonly resolutionSummary: RedactedText;
     readonly confirmationSource: ConfirmationSource;
     readonly closedAt: string;
   };
   readonly reopen?: {
     readonly count: number;
-    readonly lastReason: string;
+    readonly lastReason: RedactedText;
     readonly originalResolutionRef: string;
     readonly reopenedAt: string;
   };
@@ -136,8 +136,16 @@ export interface Ticket {
  * The caller (application layer) resolves the id and the clock reading
  * through the actual ports before calling this constructor — no domain
  * file may import from `shared/ports/` (architecture guard).
+ *
+ * `description` is typed `RedactedText`, not `string` (design "Type-enforced
+ * redaction", ADR 0008, point 2: "domain constructors accept only
+ * RedactedText"). This slice only introduces the `redaction` domain itself
+ * (tasks 2.1-2.3); the first real caller is the `CreateTicket` use case
+ * (task 2.12, next slice), which calls `redact()` on the raw submitted text
+ * and passes the result here — that is also where the redaction findings
+ * get attached to the `ticket.created` audit entry.
  */
-export function createNewTicket(description: string, id: TicketId, now: Date): Ticket {
+export function createNewTicket(description: RedactedText, id: TicketId, now: Date): Ticket {
   const nowIso = now.toISOString();
   return {
     id,

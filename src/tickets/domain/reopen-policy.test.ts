@@ -9,7 +9,7 @@ function resolvedTicket(resolvedAt: string): Ticket {
     state: "Resolved",
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: resolvedAt,
-    description: "vpn is down",
+    description: "vpn is down" as Ticket["description"],
     diagnostics: [],
     systemState: { accountUnlockSimulated: false, resetLinkIssued: false },
     history: [],

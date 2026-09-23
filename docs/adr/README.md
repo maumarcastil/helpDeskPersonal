@@ -32,3 +32,5 @@ This folder records the architecture decisions made for the help desk agent ecos
 | 0009 | [Generator: shared definitions and platform renderers](0009-generator-shared-definitions-and-platform-renderers.md) | Accepted |
 | 0010 | [Actor-scoped transitions and allowlisted remediation](0010-actor-scoped-transitions-and-allowlisted-remediation.md) | Accepted |
 | 0011 | [Zod in the domain layer](0011-zod-in-the-domain-layer.md) | Accepted |
+| 0012 | [Cryptographic primitives via ports](0012-cryptographic-primitives-via-ports.md) | Accepted |
+| 0013 | [Per-capability infrastructure adapters](0013-per-capability-infrastructure-adapters.md) | Accepted |
