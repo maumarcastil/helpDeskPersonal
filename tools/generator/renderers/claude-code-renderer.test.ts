@@ -1,14 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { validateModel } from "../validate.js";
+import { assertValidated } from "../validate.js";
 import { MODEL } from "../definitions/index.js";
+import type { GeneratorModel } from "../definitions/schema.js";
 import { claudeCodeRenderer } from "./claude-code-renderer.js";
 import { GENERATED_FILE_MARKER, type ValidatedModel } from "./platform-renderer.js";
 
 function validated(): ValidatedModel {
-  const result = validateModel(MODEL);
-  if (!result.ok) throw new Error(`fixture model is invalid: ${result.errors.join("; ")}`);
-  return { model: MODEL, longestHandoffPath: result.longestHandoffPath };
+  return assertValidated(MODEL);
 }
+
+const MCP_SERVER: GeneratorModel["mcpServer"] = {
+  name: "helpdesk",
+  command: "npx",
+  args: ["tsx", "src/app/mcp/main.ts"],
+  env: [],
+};
 
 describe("claudeCodeRenderer", () => {
   it("declares platform 'claude-code'", () => {
@@ -121,14 +127,35 @@ describe("claudeCodeRenderer", () => {
       expect(driver()).toMatch(/start(s|ing)?[\s\S]{0,60}\btriage\b/i);
     });
 
-    it("states the hard-stop bound numerically as longestHandoffPath + 1 = 3", () => {
-      expect(driver()).toContain("3");
+    it("states the hard-stop bound with the exact phrase, not merely a document that contains '3' somewhere", () => {
+      expect(driver()).toContain("Never invoke more than 3 agents in total for one ticket");
     });
 
     it("instructs reading the HANDOFF line and stopping on none", () => {
       const contents = driver();
       expect(contents).toContain("HANDOFF:");
       expect(contents.toLowerCase()).toContain("none");
+    });
+
+    it("tracks longestHandoffPath + 1 for a different graph (a -> b -> c -> d, longestHandoffPath 3, bound 4)", () => {
+      const model: GeneratorModel = {
+        agents: [
+          { id: "a", role: "triage", description: "d", instructions: "i", capabilities: ["ticket.create"], handoffs: ["b"] },
+          { id: "b", role: "diagnostic", description: "d", instructions: "i", capabilities: ["ticket.read"], handoffs: ["c"] },
+          { id: "c", role: "diagnostic", description: "d", instructions: "i", capabilities: ["ticket.read"], handoffs: ["d"] },
+          { id: "d", role: "escalation", description: "d", instructions: "i", capabilities: ["ticket.read"], handoffs: [] },
+        ],
+        prompts: [],
+        mcpServer: MCP_SERVER,
+      };
+      const validatedModel = assertValidated(model);
+      expect(validatedModel.longestHandoffPath).toBe(3);
+
+      const file = claudeCodeRenderer
+        .render(validatedModel)
+        .find((f) => f.path === ".claude/commands/helpdesk-run.md");
+      if (!file) throw new Error("no helpdesk-run.md rendered");
+      expect(file.contents).toContain("Never invoke more than 4 agents in total for one ticket");
     });
   });
 

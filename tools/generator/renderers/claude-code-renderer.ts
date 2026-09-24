@@ -1,6 +1,13 @@
 import { toolsForCapabilities } from "../capabilities.js";
 import type { AgentDefinition, GeneratorModel, PromptDefinition } from "../definitions/schema.js";
-import { GENERATED_FILE_MARKER, type PlatformRenderer, type RenderedFile, type ValidatedModel } from "./platform-renderer.js";
+import { findEntryAgents, RESERVED_IDS } from "../validate.js";
+import {
+  assertNoDuplicatePaths,
+  GENERATED_FILE_MARKER,
+  type PlatformRenderer,
+  type RenderedFile,
+  type ValidatedModel,
+} from "./platform-renderer.js";
 import { renderFrontmatterFile } from "./frontmatter.js";
 import { substitutePlaceholders } from "./template.js";
 
@@ -71,16 +78,21 @@ function renderCommandFile(prompt: PromptDefinition): RenderedFile {
   return { path: `.claude/commands/${prompt.id}.md`, contents: renderFrontmatterFile(frontmatter, body) };
 }
 
-/** The agent no other agent hands off to: the only sensible place to start the driven sequence. */
-function findEntryAgent(agents: readonly AgentDefinition[]): AgentDefinition {
-  const targeted = new Set(agents.flatMap((agent) => agent.handoffs));
-  const entries = agents.filter((agent) => !targeted.has(agent.id));
-  if (entries.length !== 1) {
+/**
+ * The agent no other agent hands off to: the only sensible place to start
+ * the driven sequence. `validateModel` (`validate.ts`) already rejects any
+ * model without exactly one such agent, so by the time a `ValidatedModel`
+ * reaches this renderer that is guaranteed; the throw below is a defensive
+ * assertion of that invariant, never the first place this rule is checked.
+ */
+function entryAgent(agents: readonly AgentDefinition[]): AgentDefinition {
+  const [agent] = findEntryAgents(agents);
+  if (!agent) {
     throw new Error(
-      `claudeCodeRenderer: expected exactly one entry agent (no incoming handoffs), found ${entries.length}: ${entries.map((a) => a.id).join(", ") || "none"}`,
+      "claudeCodeRenderer: no entry agent found even though validateModel should already guarantee exactly one",
     );
   }
-  return entries[0] as AgentDefinition;
+  return agent;
 }
 
 function renderGraphSummary(agents: readonly AgentDefinition[]): string {
@@ -104,18 +116,18 @@ function renderGraphSummary(agents: readonly AgentDefinition[]): string {
  * see).
  */
 function renderDriverCommand(model: GeneratorModel, longestHandoffPath: number): RenderedFile {
-  const entryAgent = findEntryAgent(model.agents);
+  const entry = entryAgent(model.agents);
   const maxInvocations = longestHandoffPath + 1;
   const body = [
     GENERATED_FILE_MARKER,
     "",
     "Run the help desk agent sequence for one ticket, starting from the",
-    `\`${entryAgent.id}\` agent (the only agent in this model that no other agent hands`,
+    `\`${entry.id}\` agent (the only agent in this model that no other agent hands`,
     "off to).",
     "",
     "## Procedure",
     "",
-    `1. Invoke the \`${entryAgent.id}\` subagent (e.g. via the Task tool) with the user's`,
+    `1. Invoke the \`${entry.id}\` subagent (e.g. via the Task tool) with the user's`,
     "   request as its input.",
     "2. Read that subagent's final `HANDOFF: <target> ticket=<ticketId>` line.",
     "3. If `<target>` is `none`, stop: the sequence is complete.",
@@ -137,7 +149,7 @@ function renderDriverCommand(model: GeneratorModel, longestHandoffPath: number):
     "agents.",
   ].join("\n");
   return {
-    path: ".claude/commands/helpdesk-run.md",
+    path: `.claude/commands/${RESERVED_IDS.claudeCodeDriverCommandId}.md`,
     contents: renderFrontmatterFile(
       { description: "Run the triage -> diagnostic -> escalation help desk sequence for one ticket." },
       body,
@@ -162,11 +174,13 @@ function renderMcpConfig(model: GeneratorModel): RenderedFile {
 export const claudeCodeRenderer: PlatformRenderer = {
   platform: "claude-code",
   render(model: ValidatedModel): readonly RenderedFile[] {
-    return [
+    const files = [
       ...model.model.agents.map(renderAgentFile),
       ...model.model.prompts.map(renderCommandFile),
       renderDriverCommand(model.model, model.longestHandoffPath),
       renderMcpConfig(model.model),
     ];
+    assertNoDuplicatePaths(files, "claudeCodeRenderer");
+    return files;
   },
 };

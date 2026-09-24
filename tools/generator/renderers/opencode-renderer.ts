@@ -1,7 +1,14 @@
 import { TOOL_NAMES } from "../../../src/app/mcp/tool-names.js";
 import { toolsForCapabilities } from "../capabilities.js";
 import type { AgentDefinition, Capability, GeneratorModel, PromptDefinition } from "../definitions/schema.js";
-import { GENERATED_FILE_MARKER, type PlatformRenderer, type RenderedFile, type ValidatedModel } from "./platform-renderer.js";
+import { findEntryAgents, RESERVED_IDS } from "../validate.js";
+import {
+  assertNoDuplicatePaths,
+  GENERATED_FILE_MARKER,
+  type PlatformRenderer,
+  type RenderedFile,
+  type ValidatedModel,
+} from "./platform-renderer.js";
 import { renderFrontmatterFile } from "./frontmatter.js";
 import { substitutePlaceholders } from "./template.js";
 
@@ -38,16 +45,21 @@ function renderSubagentFile(agent: AgentDefinition): RenderedFile {
   return { path: `.opencode/agents/${agent.id}.md`, contents: renderFrontmatterFile(frontmatter, body) };
 }
 
-/** The agent no other agent hands off to: the only sensible place to start the driven sequence. */
-function findEntryAgent(agents: readonly AgentDefinition[]): AgentDefinition {
-  const targeted = new Set(agents.flatMap((agent) => agent.handoffs));
-  const entries = agents.filter((agent) => !targeted.has(agent.id));
-  if (entries.length !== 1) {
+/**
+ * The agent no other agent hands off to: the only sensible place to start
+ * the driven sequence. `validateModel` (`validate.ts`) already rejects any
+ * model without exactly one such agent, so by the time a `ValidatedModel`
+ * reaches this renderer that is guaranteed; the throw below is a defensive
+ * assertion of that invariant, never the first place this rule is checked.
+ */
+function entryAgent(agents: readonly AgentDefinition[]): AgentDefinition {
+  const [agent] = findEntryAgents(agents);
+  if (!agent) {
     throw new Error(
-      `opencodeRenderer: expected exactly one entry agent (no incoming handoffs), found ${entries.length}: ${entries.map((a) => a.id).join(", ") || "none"}`,
+      "opencodeRenderer: no entry agent found even though validateModel should already guarantee exactly one",
     );
   }
-  return entries[0] as AgentDefinition;
+  return agent;
 }
 
 function renderGraphSummary(agents: readonly AgentDefinition[]): string {
@@ -81,7 +93,7 @@ function renderGraphSummary(agents: readonly AgentDefinition[]): string {
  * actually owns it.
  */
 function renderOrchestratorFile(model: GeneratorModel, longestHandoffPath: number): RenderedFile {
-  const entryAgent = findEntryAgent(model.agents);
+  const entry = entryAgent(model.agents);
   const maxInvocations = longestHandoffPath + 1;
 
   const taskPermission: Record<string, string> = { "*": "deny" };
@@ -100,12 +112,12 @@ function renderOrchestratorFile(model: GeneratorModel, longestHandoffPath: numbe
     GENERATED_FILE_MARKER,
     "",
     "Run the help desk agent sequence for one ticket, starting from the",
-    `\`${entryAgent.id}\` subagent (the only agent in this model that no other agent hands`,
+    `\`${entry.id}\` subagent (the only agent in this model that no other agent hands`,
     "off to).",
     "",
     "## Procedure",
     "",
-    `1. Invoke the \`${entryAgent.id}\` subagent with the user's request as its input.`,
+    `1. Invoke the \`${entry.id}\` subagent with the user's request as its input.`,
     "2. After it finishes, call `get_ticket` yourself to read the ticket's current",
     "   state — never rely on the subagent's own claim about what it did.",
     "3. Decide the next subagent, if any, from that server-recorded state and the",
@@ -126,7 +138,10 @@ function renderOrchestratorFile(model: GeneratorModel, longestHandoffPath: numbe
     "person will follow up; do not keep invoking subagents.",
   ].join("\n");
 
-  return { path: ".opencode/agents/helpdesk-orchestrator.md", contents: renderFrontmatterFile(frontmatter, body) };
+  return {
+    path: `.opencode/agents/${RESERVED_IDS.opencodeOrchestratorAgentId}.md`,
+    contents: renderFrontmatterFile(frontmatter, body),
+  };
 }
 
 /** OpenCode command positional arguments are 1-indexed (`$1` is the first argument). */
@@ -170,11 +185,13 @@ function renderOpencodeConfig(model: GeneratorModel): RenderedFile {
 export const opencodeRenderer: PlatformRenderer = {
   platform: "opencode",
   render(model: ValidatedModel): readonly RenderedFile[] {
-    return [
+    const files = [
       ...model.model.agents.map(renderSubagentFile),
       renderOrchestratorFile(model.model, model.longestHandoffPath),
       ...model.model.prompts.map(renderCommandFile),
       renderOpencodeConfig(model.model),
     ];
+    assertNoDuplicatePaths(files, "opencodeRenderer");
+    return files;
   },
 };

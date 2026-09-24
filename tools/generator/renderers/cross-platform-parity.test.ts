@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { validateModel } from "../validate.js";
+import { assertValidated } from "../validate.js";
 import { toolsForCapabilities } from "../capabilities.js";
 import { MODEL } from "../definitions/index.js";
 import { claudeCodeRenderer } from "./claude-code-renderer.js";
@@ -20,9 +20,7 @@ import type { RenderedFile, ValidatedModel } from "./platform-renderer.js";
  */
 
 function validated(): ValidatedModel {
-  const result = validateModel(MODEL);
-  if (!result.ok) throw new Error(`fixture model is invalid: ${result.errors.join("; ")}`);
-  return { model: MODEL, longestHandoffPath: result.longestHandoffPath };
+  return assertValidated(MODEL);
 }
 
 function fileFor(files: readonly RenderedFile[], path: string): RenderedFile {

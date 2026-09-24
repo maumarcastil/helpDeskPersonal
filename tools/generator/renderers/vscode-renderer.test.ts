@@ -1,13 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { validateModel } from "../validate.js";
+import { assertValidated } from "../validate.js";
 import { MODEL } from "../definitions/index.js";
 import { vscodeRenderer } from "./vscode-renderer.js";
 import { GENERATED_FILE_MARKER, type ValidatedModel } from "./platform-renderer.js";
 
 function validated(): ValidatedModel {
-  const result = validateModel(MODEL);
-  if (!result.ok) throw new Error(`fixture model is invalid: ${result.errors.join("; ")}`);
-  return { model: MODEL, longestHandoffPath: result.longestHandoffPath };
+  return assertValidated(MODEL);
 }
 
 describe("vscodeRenderer", () => {

@@ -1,6 +1,12 @@
 import { toolsForCapabilities } from "../capabilities.js";
 import type { AgentDefinition, PromptDefinition } from "../definitions/schema.js";
-import { GENERATED_FILE_MARKER, type PlatformRenderer, type RenderedFile, type ValidatedModel } from "./platform-renderer.js";
+import {
+  assertNoDuplicatePaths,
+  GENERATED_FILE_MARKER,
+  type PlatformRenderer,
+  type RenderedFile,
+  type ValidatedModel,
+} from "./platform-renderer.js";
 import { renderFrontmatterFile } from "./frontmatter.js";
 import { substitutePlaceholders } from "./template.js";
 
@@ -104,10 +110,12 @@ export const vscodeRenderer: PlatformRenderer = {
   platform: "vscode",
   render(model: ValidatedModel): readonly RenderedFile[] {
     const agentsById = new Map(model.model.agents.map((agent) => [agent.id, agent]));
-    return [
+    const files = [
       ...model.model.agents.map(renderAgentFile),
       ...model.model.prompts.map((prompt) => renderPromptFile(prompt, agentsById)),
       renderMcpConfig(model),
     ];
+    assertNoDuplicatePaths(files, "vscodeRenderer");
+    return files;
   },
 };

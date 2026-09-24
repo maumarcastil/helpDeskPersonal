@@ -264,4 +264,18 @@ describe("checkPromptTemplate", () => {
       true,
     );
   });
+
+  it("flags a placeholder wrapped in an extra brace around an otherwise valid name", () => {
+    const errors = checkPromptTemplate(prompt({ template: "diagnose {{{ticketId}}}", params: [] }));
+    expect(
+      errors.some((e) => e.includes("malformed placeholder") && e.includes("{{{ticketId}}}")),
+    ).toBe(true);
+  });
+
+  it("flags an unclosed placeholder span", () => {
+    const errors = checkPromptTemplate(prompt({ template: "diagnose {{ticketId}", params: [] }));
+    expect(errors.some((e) => e.includes("malformed placeholder") && e.includes("{{ticketId}"))).toBe(
+      true,
+    );
+  });
 });
