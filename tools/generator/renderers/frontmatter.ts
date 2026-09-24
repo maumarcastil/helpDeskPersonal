@@ -18,11 +18,18 @@ export type YamlValue = string | boolean | readonly YamlValue[] | { readonly [ke
 const LEADING_INDICATOR_RE = /^[-?:,[\]{}#&*!|>'"%@`]/;
 const RESERVED_KEYWORD_RE = /^(true|false|yes|no|null|~)$/i;
 const NUMBER_LIKE_RE = /^-?\d+(\.\d+)?$/;
+/** A `#` preceded by whitespace starts a YAML comment in a plain scalar, silently truncating the rest of the line. */
+const MID_STRING_COMMENT_RE = /[ \t]#/;
+/** Any C0 control character (including `\n`, `\t`, `\r`) or DEL; none may appear unescaped in a plain scalar. */
+const CONTROL_CHAR_RE = /[\x00-\x1f\x7f]/;
+/** Same character class, `g`-flagged for `.replace()` (which resets `lastIndex` itself, unlike `.test()`). */
+const CONTROL_CHAR_GLOBAL_RE = /[\x00-\x1f\x7f]/g;
 
 function needsQuoting(value: string): boolean {
   if (value.length === 0) return true;
   if (/^\s|\s$/.test(value)) return true;
-  if (/[\n\t]/.test(value)) return true;
+  if (CONTROL_CHAR_RE.test(value)) return true;
+  if (MID_STRING_COMMENT_RE.test(value)) return true;
   if (LEADING_INDICATOR_RE.test(value)) return true;
   if (value.includes(": ") || value.endsWith(":")) return true;
   if (value.includes('"')) return true;
@@ -31,13 +38,26 @@ function needsQuoting(value: string): boolean {
   return false;
 }
 
+/** Escapes one C0/DEL control character for a double-quoted YAML scalar: the three named escapes, else `\xHH`. */
+function escapeControlChar(char: string): string {
+  switch (char) {
+    case "\n":
+      return "\\n";
+    case "\t":
+      return "\\t";
+    case "\r":
+      return "\\r";
+    default:
+      return `\\x${char.charCodeAt(0).toString(16).padStart(2, "0")}`;
+  }
+}
+
 function renderYamlString(value: string): string {
   if (!needsQuoting(value)) return value;
   const escaped = value
     .replace(/\\/g, "\\\\")
     .replace(/"/g, '\\"')
-    .replace(/\n/g, "\\n")
-    .replace(/\t/g, "\\t");
+    .replace(CONTROL_CHAR_GLOBAL_RE, escapeControlChar);
   return `"${escaped}"`;
 }
 

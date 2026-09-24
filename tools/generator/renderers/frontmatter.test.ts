@@ -57,6 +57,47 @@ describe("toFrontmatter: string quoting and escaping", () => {
       'description: Classifies a new ticket (triage), then routes it.',
     );
   });
+
+  it("quotes a string with a mid-string ' #' (would otherwise start a YAML comment and silently truncate)", () => {
+    expect(toFrontmatter({ description: "resolve issue #123 first" })).toBe(
+      'description: "resolve issue #123 first"',
+    );
+  });
+
+  it("does not quote a '#' with no preceding whitespace (not a comment start)", () => {
+    expect(toFrontmatter({ description: "room#42" })).toBe("description: room#42");
+  });
+
+  it("quotes and escapes a string containing a carriage return", () => {
+    expect(toFrontmatter({ value: "line one\rline two" })).toBe('value: "line one\\rline two"');
+  });
+
+  it("quotes and escapes a string containing a CRLF pair", () => {
+    expect(toFrontmatter({ value: "line one\r\nline two" })).toBe('value: "line one\\r\\nline two"');
+  });
+
+  it("quotes and escapes a string containing another C0 control character (vertical tab)", () => {
+    expect(toFrontmatter({ value: "a\x0Bb" })).toBe('value: "a\\x0bb"');
+  });
+
+  it("round-trips every representative value through renderYamlString's shape (quoted, no raw control chars, no unescaped quotes)", () => {
+    const values = [
+      "resolve issue #123 first",
+      "line one\rline two",
+      "line one\r\nline two",
+      "a\x0Bb",
+      'say "hi" \\ ok',
+      "line one\nline two",
+    ];
+    for (const value of values) {
+      const rendered = toFrontmatter({ value });
+      expect(rendered.startsWith('value: "')).toBe(true);
+      expect(rendered.endsWith('"')).toBe(true);
+      const inner = rendered.slice('value: "'.length, -1);
+      // No raw control character (C0 or DEL) may appear unescaped in the emitted text.
+      expect(/[\x00-\x1f\x7f]/.test(inner)).toBe(false);
+    }
+  });
 });
 
 describe("toFrontmatter: string lists", () => {
