@@ -1,8 +1,9 @@
-import { mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import type { GeneratorModel } from "./definitions/schema.js";
 import { claudeCodeRenderer } from "./renderers/claude-code-renderer.js";
 import { opencodeRenderer } from "./renderers/opencode-renderer.js";
+import { GENERATED_FILE_MARKER } from "./renderers/platform-renderer.js";
 import type { PlatformRenderer, RenderedFile } from "./renderers/platform-renderer.js";
 import { vscodeRenderer } from "./renderers/vscode-renderer.js";
 import { assertValidated, validateModel } from "./validate.js";
@@ -83,27 +84,116 @@ export function renderAll(model: GeneratorModel): RenderOutcome {
 let temporaryFileCounter = 0;
 
 /**
+ * The generator's own output directories, listed explicitly and statically
+ * (never derived from a renderer's current definitions) so that a fully
+ * vacated directory or a stale leftover file is still recognized as
+ * generator-owned even when nothing currently expects a file there. Deliberately
+ * excludes `.claude/skills` and the repository root: those are not
+ * generator output, and scanning them would risk flagging or deleting
+ * unrelated, hand-maintained content.
+ */
+export const GENERATOR_OWNED_DIRECTORIES: readonly string[] = [
+  ".github/agents",
+  ".github/prompts",
+  ".claude/agents",
+  ".claude/commands",
+  ".opencode/agents",
+  ".opencode/commands",
+];
+
+/** Maps each directory that directly contains an expected `RenderedFile` to the set of file names expected there. */
+function expectedNamesByDirectory(files: readonly RenderedFile[]): Map<string, Set<string>> {
+  const expectedNamesByDir = new Map<string, Set<string>>();
+  for (const file of files) {
+    const dir = dirname(file.path);
+    if (dir === ".") continue;
+    const names = expectedNamesByDir.get(dir) ?? new Set<string>();
+    names.add(basename(file.path));
+    expectedNamesByDir.set(dir, names);
+  }
+  return expectedNamesByDir;
+}
+
+/**
+ * Deletes a stale generated file left behind in a generator-owned directory
+ * by a previous run whose definition (agent/prompt) was since removed or
+ * renamed. Scans every directory in `GENERATOR_OWNED_DIRECTORIES` — not just
+ * ones with an expected file this run — so a directory fully vacated by
+ * this run (its last definition removed) still gets its leftovers cleaned
+ * up. Only deletes a file that carries `GENERATED_FILE_MARKER`: a
+ * hand-written file with no marker is left untouched even if it is not part
+ * of this run's expected output, since pruning must never destroy content
+ * the generator did not create. JSON outputs (`.mcp.json`,
+ * `.vscode/mcp.json`, `opencode.json`) live at fixed top-level paths outside
+ * any owned directory and are always rewritten in place by the loop above,
+ * so they need no separate pruning step.
+ */
+async function pruneStaleOwnedFiles(files: readonly RenderedFile[], outRoot: string): Promise<void> {
+  const expectedNamesByDir = expectedNamesByDirectory(files);
+
+  for (const dir of GENERATOR_OWNED_DIRECTORIES) {
+    const expectedNames = expectedNamesByDir.get(dir) ?? new Set<string>();
+    let entries;
+    try {
+      entries = await readdir(join(outRoot, dir), { withFileTypes: true });
+    } catch (error) {
+      if (isEnoent(error)) continue;
+      throw error;
+    }
+
+    for (const entry of entries) {
+      if (!entry.isFile() || expectedNames.has(entry.name)) continue;
+      const absolutePath = join(outRoot, dir, entry.name);
+      let contents: string;
+      try {
+        contents = await readFile(absolutePath, "utf8");
+      } catch (error) {
+        if (isEnoent(error)) continue;
+        throw error;
+      }
+      if (contents.includes(GENERATED_FILE_MARKER)) {
+        await unlink(absolutePath);
+      }
+    }
+  }
+}
+
+/**
  * Writes every file under `outRoot`, creating parent directories as
- * needed. Each file is written via a temp-file-then-rename: `writeFile`
- * targets a sibling `<path>.tmp-<pid>-<counter>` path and only then
- * `rename`s it onto the real path. `rename` within the same directory (and
- * therefore the same filesystem) is atomic on POSIX, so a reader can never
- * observe a half-written file, and replacing an existing file this way has
- * no truncate-then-write window where the file is briefly empty — unlike
- * calling `writeFile` directly on the final path. The all-or-nothing
- * guarantee this function's caller (`runGenerate`) relies on is about the
- * whole generator run (nothing is written if validation fails), not about
- * crash-safety mid-write across many files; the per-file rename is the
- * cheap, dependency-free way to make each individual file's write atomic.
+ * needed, then prunes stale generated files (see `pruneStaleOwnedFiles`).
+ * Each file is written via a temp-file-then-rename: `writeFile` targets a
+ * sibling `<path>.tmp-<pid>-<counter>` path and only then `rename`s it onto
+ * the real path. `rename` within the same directory (and therefore the same
+ * filesystem) is atomic on POSIX, so a reader can never observe a
+ * half-written file, and replacing an existing file this way has no
+ * truncate-then-write window where the file is briefly empty — unlike
+ * calling `writeFile` directly on the final path. If either `writeFile` or
+ * `rename` throws (ENOSPC, EPERM, a directory already at the target path,
+ * ...), the sibling temp file is removed (ignoring ENOENT, in case it was
+ * never created) before the error is rethrown, so a failed run never leaves
+ * a `.tmp-*` file behind. The all-or-nothing guarantee this function's
+ * caller (`runGenerate`) relies on is about the whole generator run
+ * (nothing is written if validation fails), not about crash-safety
+ * mid-write across many files; the per-file rename is the cheap,
+ * dependency-free way to make each individual file's write atomic.
  */
 export async function writeRenderedFiles(files: readonly RenderedFile[], outRoot: string): Promise<void> {
   for (const file of files) {
     const absolutePath = join(outRoot, file.path);
     await mkdir(dirname(absolutePath), { recursive: true });
     const temporaryPath = `${absolutePath}.tmp-${process.pid}-${temporaryFileCounter++}`;
-    await writeFile(temporaryPath, file.contents, "utf8");
-    await rename(temporaryPath, absolutePath);
+    try {
+      await writeFile(temporaryPath, file.contents, "utf8");
+      await rename(temporaryPath, absolutePath);
+    } catch (error) {
+      await unlink(temporaryPath).catch((unlinkError: unknown) => {
+        if (!isEnoent(unlinkError)) throw unlinkError;
+      });
+      throw error;
+    }
   }
+
+  await pruneStaleOwnedFiles(files, outRoot);
 }
 
 export type CheckDifferenceReason = "missing" | "differs" | "extra";
@@ -129,31 +219,32 @@ function isEnoent(error: unknown): boolean {
 
 /**
  * Detects a hand-added or stale file inside a directory the generator
- * exclusively owns. Scoped deliberately narrow: it lists only the exact
- * directories that directly contain an expected `RenderedFile` (e.g.
- * `.claude/agents`, `.opencode/commands`), never the repository root or an
- * unrelated sibling such as `.claude/skills/`. Per ADR 0009 every file
- * directly inside one of these directories belongs to the generator's
- * output for that platform, so a name it did not just render there is
- * either a hand edit or leftover drift from a previous run — and nothing
- * outside these exact directories is ever inspected, so a file the
- * generator has no opinion about can never be flagged. Top-level singleton
- * outputs (e.g. `.mcp.json`, `opencode.json`) have no "directory" of their
- * own to scan for siblings and are covered by the missing/differs checks
- * instead.
+ * exclusively owns. Scoped deliberately narrow: it scans exactly
+ * `GENERATOR_OWNED_DIRECTORIES` (e.g. `.claude/agents`,
+ * `.opencode/commands`), never the repository root or an unrelated sibling
+ * such as `.claude/skills/`. Per ADR 0009 every file directly inside one of
+ * these directories belongs to the generator's output for that platform, so
+ * a name it did not just render there is either a hand edit or leftover
+ * drift from a previous run. Every owned directory is scanned regardless of
+ * whether this run currently expects any file there — not just directories
+ * with an expected file — so a directory a run has fully vacated (its last
+ * definition removed) still has its leftovers reported instead of silently
+ * skipped. A hand-written file with no `GENERATED_FILE_MARKER` is reported
+ * exactly the same as a marked one: `checkRenderedFiles` is purely
+ * informational drift detection, so it surfaces anything unexpected
+ * regardless of origin; only `writeRenderedFiles`'s pruning (which may
+ * delete files) restricts itself to marked ones. Nothing outside these
+ * exact directories is ever inspected, so a file the generator has no
+ * opinion about can never be flagged. Top-level singleton outputs (e.g.
+ * `.mcp.json`, `opencode.json`) have no "directory" of their own to scan
+ * for siblings and are covered by the missing/differs checks instead.
  */
 async function findExtraFiles(files: readonly RenderedFile[], outRoot: string): Promise<readonly string[]> {
-  const expectedNamesByDir = new Map<string, Set<string>>();
-  for (const file of files) {
-    const dir = dirname(file.path);
-    if (dir === ".") continue;
-    const names = expectedNamesByDir.get(dir) ?? new Set<string>();
-    names.add(basename(file.path));
-    expectedNamesByDir.set(dir, names);
-  }
+  const expectedNamesByDir = expectedNamesByDirectory(files);
 
   const extras: string[] = [];
-  for (const [dir, expectedNames] of expectedNamesByDir) {
+  for (const dir of GENERATOR_OWNED_DIRECTORIES) {
+    const expectedNames = expectedNamesByDir.get(dir) ?? new Set<string>();
     let entries;
     try {
       entries = await readdir(join(outRoot, dir), { withFileTypes: true });
@@ -215,9 +306,10 @@ export interface RunGenerateResult {
 /**
  * The whole decision `cli.ts` needs, with no `console`/`process.exit`
  * inside it so it stays directly unit-testable: validate + render in
- * memory; on any validation error, exit 1 and write nothing; otherwise
- * either compare against `outRoot` (`check: true`, read-only) or write
- * every file (`check: false`).
+ * memory; on any validation error (including a cross-renderer duplicate
+ * path caught by `renderAll`'s `findCrossPlatformDuplicatePaths` check),
+ * exit 1 and write nothing; otherwise either compare against `outRoot`
+ * (`check: true`, read-only) or write every file (`check: false`).
  */
 export async function runGenerate(model: GeneratorModel, options: RunGenerateOptions): Promise<RunGenerateResult> {
   const rendered = renderAll(model);

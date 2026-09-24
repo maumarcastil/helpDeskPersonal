@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { MODEL } from "./definitions/index.js";
@@ -41,7 +42,7 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
     }
     if (arg === "--out") {
       const value = argv[i + 1];
-      if (value === undefined) {
+      if (value === undefined || value.startsWith("--")) {
         throw new Error("--out requires a path argument");
       }
       outRoot = resolve(value);
@@ -63,8 +64,37 @@ async function main(): Promise<void> {
   process.exitCode = exitCode;
 }
 
-const isMainModule =
-  process.argv[1] !== undefined && fileURLToPath(import.meta.url) === resolve(process.argv[1]);
+/**
+ * `fs.realpathSync`, falling back to the input path unchanged if it cannot
+ * be resolved (e.g. it does not exist). Used by `isMainModulePath` so a
+ * lookup failure degrades to the pre-fix, non-realpath comparison instead
+ * of throwing out of a module-load-time computation.
+ */
+function safeRealpath(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    return path;
+  }
+}
+
+/**
+ * Whether `argv1` (raw, exactly as the shell/loader passed it) names the
+ * same file as `moduleFilePath` (the running module's own path). Compares
+ * `fs.realpathSync` of *both* sides rather than a plain string/`resolve`
+ * comparison: `fileURLToPath(import.meta.url)` on the module side is
+ * typically already symlink-resolved by Node's loader, while `argv[1]` is
+ * whatever the invoking shell literally passed — e.g. a symlinked bin entry,
+ * or a macOS path through `/var` (itself a symlink to `/private/var`). A
+ * bare `resolve()` comparison mismatches in exactly that case, causing
+ * `main()` to silently never run (task 6.13b, PR C review finding).
+ */
+export function isMainModulePath(moduleFilePath: string, argv1: string | undefined): boolean {
+  if (argv1 === undefined) return false;
+  return safeRealpath(moduleFilePath) === safeRealpath(resolve(argv1));
+}
+
+const isMainModule = isMainModulePath(fileURLToPath(import.meta.url), process.argv[1]);
 
 if (isMainModule) {
   main().catch((error: unknown) => {

@@ -1,6 +1,8 @@
-import { resolve } from "node:path";
-import { describe, expect, it } from "vitest";
-import { parseArgs, REPO_ROOT } from "./cli.js";
+import { mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { isMainModulePath, parseArgs, REPO_ROOT } from "./cli.js";
 
 /**
  * task 6.11/6.12 (PR C): `cli.ts` itself stays thin wiring (parse argv, call
@@ -39,6 +41,39 @@ describe("parseArgs", () => {
 
   it("throws when --out has no following value", () => {
     expect(() => parseArgs(["--out"])).toThrow(/--out requires a path argument/);
+  });
+
+  it("throws when --out is immediately followed by another flag instead of a path", () => {
+    expect(() => parseArgs(["--out", "--check"])).toThrow(/--out requires a path argument/);
+  });
+});
+
+describe("isMainModulePath", () => {
+  let dir: string;
+
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), "helpdesk-cli-symlink-"));
+  });
+
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("returns false when argv[1] is undefined", () => {
+    expect(isMainModulePath("/some/module.js", undefined)).toBe(false);
+  });
+
+  it("returns false for unrelated paths", () => {
+    expect(isMainModulePath("/some/module.js", "/some/other.js")).toBe(false);
+  });
+
+  it("returns true when argv[1] is a symlink resolving to the same real file as the module path", async () => {
+    const real = join(dir, "cli-real.mjs");
+    const link = join(dir, "cli-link.mjs");
+    await writeFile(real, "export {};\n", "utf8");
+    await symlink(real, link);
+
+    expect(isMainModulePath(real, link)).toBe(true);
   });
 });
 
