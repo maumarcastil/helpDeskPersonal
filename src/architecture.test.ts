@@ -347,3 +347,69 @@ describe("architecture: scripts/ boundary", () => {
     expect(scriptImportingDomain).toBe(true);
   });
 });
+
+/**
+ * Task 6.13 (PR C): extends the "generator isolation" describe block above
+ * (which already proves `src/` never imports `tools/`) with the other half
+ * of ADR 0004/0009's boundary — `tools/generator/**` may import from `src/`
+ * ONLY `src/app/mcp/tool-names`, the single source of truth for the MCP
+ * tool names both the server (`server.ts`) and the generator's
+ * `capabilities.ts`/`opencode-renderer.ts` read. `tool-names.ts` itself has
+ * zero imports (verified by reading it directly), so there is nothing else
+ * from `src/` that importing it would transitively pull in. Reuses
+ * `listFiles`, `importSpecifiers`, and `resolveRelativeSpecifier` from
+ * above rather than redefining them, since all three already take a
+ * directory/file argument and have no `src`-specific behavior baked in.
+ */
+const ALLOWED_TOOLS_SRC_IMPORT = "src/app/mcp/tool-names";
+
+/**
+ * Shared by both tests below: resolves a relative import `specifier` from
+ * `file` against `resolveRelativeSpecifier` and strips a trailing `.js` (an
+ * ESM specifier extension the resolved `src/`-relative path never carries).
+ * Returns `undefined` for a non-relative specifier, which can never reach
+ * `src/` in the first place. Extracted (task 6.13b review suggestion) so
+ * the "relative specifier -> resolve -> strip `.js` -> compare" predicate
+ * exists once instead of being duplicated across the offender-collecting
+ * test and the sanity-check test.
+ */
+function resolvedToolsSrcTarget(file: string, specifier: string): string | undefined {
+  if (!specifier.startsWith(".")) return undefined; // only a relative specifier can reach src/
+  return resolveRelativeSpecifier(file, specifier).replace(/\.js$/, "");
+}
+
+describe("architecture: tools/generator/ imports only src/app/mcp/tool-names from src/ (task 6.13)", () => {
+  it("no relative import under tools/generator/ resolves into src/ other than src/app/mcp/tool-names", () => {
+    const files = listFiles("tools/generator");
+    expect(files.length).toBeGreaterThan(0);
+
+    const offenders: string[] = [];
+    for (const file of files) {
+      const specifiers = importSpecifiers(readFileSync(file, "utf8"));
+      for (const specifier of specifiers) {
+        const resolved = resolvedToolsSrcTarget(file, specifier);
+        if (resolved === undefined || resolved === ALLOWED_TOOLS_SRC_IMPORT) continue;
+        if (resolved === "src" || resolved.startsWith("src/")) {
+          offenders.push(
+            `${file} imports "${specifier}" (resolves to "${resolved}"; only "${ALLOWED_TOOLS_SRC_IMPORT}" is allowed)`,
+          );
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it("at least one tools/generator/ file actually imports src/app/mcp/tool-names (sanity check the allowlisted import is exercised)", () => {
+    const files = listFiles("tools/generator");
+    const importsToolNames = files.some((file) => {
+      const specifiers = importSpecifiers(readFileSync(file, "utf8"));
+      return specifiers.some((specifier) => resolvedToolsSrcTarget(file, specifier) === ALLOWED_TOOLS_SRC_IMPORT);
+    });
+    expect(importsToolNames).toBe(true);
+  });
+
+  it("src/app/mcp/tool-names.ts has zero imports, so the generator's one allowlisted src/ import pulls in nothing else transitively", () => {
+    const content = readFileSync("src/app/mcp/tool-names.ts", "utf8");
+    expect(importSpecifiers(content)).toEqual([]);
+  });
+});
