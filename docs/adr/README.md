@@ -34,3 +34,5 @@ This folder records the architecture decisions made for the help desk agent ecos
 | 0011 | [Zod in the domain layer](0011-zod-in-the-domain-layer.md) | Accepted |
 | 0012 | [Cryptographic primitives via ports](0012-cryptographic-primitives-via-ports.md) | Accepted |
 | 0013 | [Per-capability infrastructure adapters](0013-per-capability-infrastructure-adapters.md) | Accepted |
+| 0014 | [Audit-chain verification CLI (`audit:verify`)](0014-audit-verify-cli.md) | Accepted |
+| 0015 | [Probe launcher precedence (built JS preferred, tsx fallback)](0015-probe-launcher-precedence.md) | Accepted |

@@ -26,7 +26,13 @@ const DISPOSE_GRACE_MS = 100;
 
 export interface ChildProcessDiagnosticRunnerOptions {
   readonly scriptPath: string;
-  readonly tsxBinPath: string;
+  /**
+   * Path to the `tsx` CLI binary. Omit when `scriptPath` already
+   * points at a built JavaScript file (ADR 0014 — the runner then
+   * spawns `node <scriptPath>` directly instead of
+   * `node <tsxBinPath> <scriptPath>`).
+   */
+  readonly tsxBinPath?: string;
   /**
    * Environment the parent process wants visible to the child. Only
    * keys in `FORWARDED_ENV_KEYS` survive; keys matching `/PSEUDONYM/i`
@@ -100,7 +106,7 @@ function forwardEnvFrom(parentEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
  */
 export class ChildProcessDiagnosticRunner implements DiagnosticRunner {
   private readonly scriptPath: string;
-  private readonly tsxBinPath: string;
+  private readonly tsxBinPath: string | undefined;
   private readonly parentEnv: NodeJS.ProcessEnv;
   private readonly graceMs: number;
   private readonly inflight: Set<ChildProcess> = new Set();
@@ -257,7 +263,14 @@ export class ChildProcessDiagnosticRunner implements DiagnosticRunner {
   }
 
   private spawn(args: string[], env: NodeJS.ProcessEnv): RunningChild {
-    const child = spawn("node", [this.tsxBinPath, this.scriptPath, ...args], {
+    // Two launch shapes (ADR 0014):
+    //   - built path:  node <scriptPath> <args>
+    //   - tsx path:    node <tsxBinPath> <scriptPath> <args>
+    const commandArgs =
+      this.tsxBinPath !== undefined
+        ? [this.tsxBinPath, this.scriptPath, ...args]
+        : [this.scriptPath, ...args];
+    const child = spawn("node", commandArgs, {
       shell: false,
       env,
       stdio: ["ignore", "pipe", "pipe"],
