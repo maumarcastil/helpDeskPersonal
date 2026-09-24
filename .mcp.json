@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "helpdesk": {
+      "command": "npx",
+      "args": [
+        "tsx",
+        "src/app/mcp/main.ts"
+      ],
+      "env": {
+        "HELPDESK_PSEUDONYM_KEY": "${HELPDESK_PSEUDONYM_KEY}"
+      }
+    }
+  }
+}
