@@ -22,7 +22,10 @@ safe to fix, which state changes are legal, redaction, audit). This skill only s
 
 ## When NOT to use
 
-- Ticket is `New` or `Triaged` only → triage / move it to `InProgress` first.
+- Ticket is `New` → triage it first.
+- Ticket is `Triaged` or `Reopened` → move it to `InProgress` first with
+  `update_ticket({ ticketId, actor: "diagnostic", transition: { to: "InProgress" } })`
+  (triage may not do this).
 - Ticket is `Escalated`, `Resolved` or `Closed` → nothing to diagnose.
 - The request is about permissions, licenses or profile changes with no network
   symptom → no probe exists for it; escalate instead.

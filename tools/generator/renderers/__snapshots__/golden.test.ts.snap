@@ -35,12 +35,17 @@ full failure-handling table; this file only states your boundaries.
 ## Procedure
 
 1. **Read the ticket.** Call \`get_ticket({ ticketId })\`. It must have
-   \`triage\` data and be \`InProgress\` or \`PendingUserConfirmation\`; if not,
-   see [Failure handling](#failure-handling).
-2. **Run the connectivity-diagnostic skill.** It runs \`run_diagnostic\`,
+   \`triage\` data; if not, see [Failure handling](#failure-handling).
+2. **Move it into progress if needed.** A handoff from triage arrives in
+   \`Triaged\`, and triage may not start work on it. If the ticket is
+   \`Triaged\` or \`Reopened\`, call
+   \`update_ticket({ ticketId, actor: "diagnostic", transition: { to: "InProgress" } })\`
+   first. The ticket must now be \`InProgress\` or \`PendingUserConfirmation\`;
+   if it is in any other state, see [Failure handling](#failure-handling).
+3. **Run the connectivity-diagnostic skill.** It runs \`run_diagnostic\`,
    applies an allowlisted fix with \`apply_remediation\` when the server
    allows one, resolves the ticket after a confirmed re-check, or escalates.
-3. **Hand off.** When the skill's procedure ends in escalation, hand off to
+4. **Hand off.** When the skill's procedure ends in escalation, hand off to
    \`escalation\` with only \`ticketId\` (the escalation record itself was
    already written by your own \`update_ticket\` call). When it resolves the
    ticket, there is nothing further to hand off.
@@ -327,12 +332,17 @@ full failure-handling table; this file only states your boundaries.
 ## Procedure
 
 1. **Read the ticket.** Call \`get_ticket({ ticketId })\`. It must have
-   \`triage\` data and be \`InProgress\` or \`PendingUserConfirmation\`; if not,
-   see [Failure handling](#failure-handling).
-2. **Run the connectivity-diagnostic skill.** It runs \`run_diagnostic\`,
+   \`triage\` data; if not, see [Failure handling](#failure-handling).
+2. **Move it into progress if needed.** A handoff from triage arrives in
+   \`Triaged\`, and triage may not start work on it. If the ticket is
+   \`Triaged\` or \`Reopened\`, call
+   \`update_ticket({ ticketId, actor: "diagnostic", transition: { to: "InProgress" } })\`
+   first. The ticket must now be \`InProgress\` or \`PendingUserConfirmation\`;
+   if it is in any other state, see [Failure handling](#failure-handling).
+3. **Run the connectivity-diagnostic skill.** It runs \`run_diagnostic\`,
    applies an allowlisted fix with \`apply_remediation\` when the server
    allows one, resolves the ticket after a confirmed re-check, or escalates.
-3. **Hand off.** When the skill's procedure ends in escalation, hand off to
+4. **Hand off.** When the skill's procedure ends in escalation, hand off to
    \`escalation\` with only \`ticketId\` (the escalation record itself was
    already written by your own \`update_ticket\` call). When it resolves the
    ticket, there is nothing further to hand off.
@@ -633,12 +643,17 @@ full failure-handling table; this file only states your boundaries.
 ## Procedure
 
 1. **Read the ticket.** Call \`get_ticket({ ticketId })\`. It must have
-   \`triage\` data and be \`InProgress\` or \`PendingUserConfirmation\`; if not,
-   see [Failure handling](#failure-handling).
-2. **Run the connectivity-diagnostic skill.** It runs \`run_diagnostic\`,
+   \`triage\` data; if not, see [Failure handling](#failure-handling).
+2. **Move it into progress if needed.** A handoff from triage arrives in
+   \`Triaged\`, and triage may not start work on it. If the ticket is
+   \`Triaged\` or \`Reopened\`, call
+   \`update_ticket({ ticketId, actor: "diagnostic", transition: { to: "InProgress" } })\`
+   first. The ticket must now be \`InProgress\` or \`PendingUserConfirmation\`;
+   if it is in any other state, see [Failure handling](#failure-handling).
+3. **Run the connectivity-diagnostic skill.** It runs \`run_diagnostic\`,
    applies an allowlisted fix with \`apply_remediation\` when the server
    allows one, resolves the ticket after a confirmed re-check, or escalates.
-3. **Hand off.** When the skill's procedure ends in escalation, hand off to
+4. **Hand off.** When the skill's procedure ends in escalation, hand off to
    \`escalation\` with only \`ticketId\` (the escalation record itself was
    already written by your own \`update_ticket\` call). When it resolves the
    ticket, there is nothing further to hand off.

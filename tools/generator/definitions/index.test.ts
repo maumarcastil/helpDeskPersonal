@@ -57,6 +57,19 @@ describe("real generator definitions", () => {
     expect(diagnostic.instructions).toContain("connectivity-diagnostic");
   });
 
+  it("every handoff target from triage moves a Triaged ticket into InProgress itself", () => {
+    // triage may not perform Triaged -> InProgress (only diagnostic and
+    // escalation may), so each agent triage hands off to must do it before
+    // any step that requires an InProgress ticket.
+    const triage = AGENTS.find((a) => a.id === "triage")!;
+    for (const targetId of triage.handoffs) {
+      const target = AGENTS.find((a) => a.id === targetId)!;
+      expect(target.instructions).toContain(
+        `update_ticket({ ticketId, actor: "${target.id}", transition: { to: "InProgress" } })`,
+      );
+    }
+  });
+
   it("every agent's instructions declare its actor value and forbid echoing credentials/PII", () => {
     for (const a of AGENTS) {
       expect(a.instructions).toContain(`actor "${a.id}"`);
