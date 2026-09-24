@@ -86,6 +86,17 @@ describe("claudeCodeRenderer", () => {
       expect(contractSection).not.toContain("escalation,");
       expect(contractSection).toContain("none");
     });
+
+    it("the `none` example is true for every agent, not just diagnostic's self-recorded escalation", () => {
+      // diagnostic hands off to escalation *after* already recording the
+      // escalation itself, so "after an escalation you have already
+      // recorded yourself" is never actually a reason for diagnostic to use
+      // `none` — it contradicts the diagnostic agent's own procedure. The
+      // example must hold for every agent instead.
+      const contents = agentFile("triage");
+      expect(contents).not.toContain("after an escalation you have already recorded yourself");
+      expect(contents).toContain("last agent in the sequence");
+    });
   });
 
   describe("command files", () => {

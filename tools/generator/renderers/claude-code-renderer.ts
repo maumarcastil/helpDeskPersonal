@@ -34,9 +34,9 @@ function renderHandoffContract(agent: AgentDefinition): string {
     "HANDOFF: <target> ticket=<ticketId>",
     "",
     `Allowed values for \`<target>\` from this agent: ${allowed}. Use \`none\` when you` +
-      " are not handing this ticket to another agent (for example, after resolving it" +
-      " or after an escalation you have already recorded yourself). Always fill in the" +
-      " real ticket id, never a placeholder.",
+      " are not handing this ticket to another agent (for example, after resolving it," +
+      " or when you are the last agent in the sequence). Always fill in the real ticket" +
+      " id, never a placeholder.",
   ].join("\n");
 }
 

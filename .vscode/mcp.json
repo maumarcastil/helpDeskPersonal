@@ -1,0 +1,23 @@
+{
+  "inputs": [
+    {
+      "type": "promptString",
+      "id": "helpdesk-pseudonym-key",
+      "description": "HELPDESK_PSEUDONYM_KEY",
+      "password": true
+    }
+  ],
+  "servers": {
+    "helpdesk": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "tsx",
+        "src/app/mcp/main.ts"
+      ],
+      "env": {
+        "HELPDESK_PSEUDONYM_KEY": "${input:helpdesk-pseudonym-key}"
+      }
+    }
+  }
+}

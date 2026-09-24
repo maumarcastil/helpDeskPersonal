@@ -57,6 +57,57 @@ describe("real generator definitions", () => {
     expect(diagnostic.instructions).toContain("connectivity-diagnostic");
   });
 
+  it("every handoff target from triage moves a Triaged ticket into InProgress itself, before the step that needs it", () => {
+    // triage may not perform Triaged -> InProgress (only diagnostic and
+    // escalation may), so each agent triage hands off to must do it before
+    // any step that requires an InProgress ticket.
+    const triage = AGENTS.find((a) => a.id === "triage")!;
+    const stepNeedingInProgress: Record<string, string> = {
+      diagnostic: "**Run the connectivity-diagnostic skill.**",
+      escalation: 'transition: { to: "Escalated"',
+    };
+    for (const targetId of triage.handoffs) {
+      const target = AGENTS.find((a) => a.id === targetId)!;
+      const inProgressCall = `update_ticket({ ticketId, actor: "${target.id}", transition: { to: "InProgress" } })`;
+      const inProgressIdx = target.instructions.indexOf(inProgressCall);
+      expect(inProgressIdx, `${target.id} should call the InProgress transition`).toBeGreaterThan(-1);
+
+      const laterMarker = stepNeedingInProgress[target.id];
+      expect(laterMarker, `no later-step marker configured for ${target.id}`).toBeDefined();
+      const laterIdx = target.instructions.indexOf(laterMarker!);
+      expect(laterIdx, `${target.id} should contain the step that needs InProgress`).toBeGreaterThan(-1);
+      expect(inProgressIdx, `${target.id} should move to InProgress before ${laterMarker}`).toBeLessThan(laterIdx);
+    }
+  });
+
+  it("escalation's instructions handle a ticket that arrives already Escalated without re-transitioning", () => {
+    // The diagnostic agent records the escalation itself before handing off
+    // (it calls update_ticket to Escalated, then hands off to escalation).
+    // Escalation must recognize that case and adopt the existing escalation
+    // data instead of calling update_ticket to Escalated a second time,
+    // which would fail with INVALID_TRANSITION (there is no
+    // Escalated -> Escalated rule).
+    const escalation = AGENTS.find((a) => a.id === "escalation")!;
+    const alreadyEscalatedIdx = escalation.instructions.search(/already.{0,15}Escalated/i);
+    expect(alreadyEscalatedIdx, "instructions should describe the already-Escalated branch").toBeGreaterThan(-1);
+
+    const transitionCallIdx = escalation.instructions.indexOf('transition: { to: "Escalated"');
+    expect(transitionCallIdx, "instructions should still perform the Escalated transition").toBeGreaterThan(-1);
+
+    expect(
+      alreadyEscalatedIdx,
+      "the already-Escalated branch must be described before performing the Escalated transition",
+    ).toBeLessThan(transitionCallIdx);
+  });
+
+  it("diagnostic's failure handling covers a ticket already Escalated/Resolved/Closed and INVALID_TRANSITION", () => {
+    const diagnostic = AGENTS.find((a) => a.id === "diagnostic")!;
+    expect(diagnostic.instructions).toMatch(/Escalated.{0,10}Resolved.{0,10}Closed/);
+    expect(diagnostic.instructions).toContain("nothing to diagnose");
+    expect(diagnostic.instructions).toContain("INVALID_TRANSITION");
+    expect(diagnostic.instructions).toContain("allowedTransitions");
+  });
+
   it("every agent's instructions declare its actor value and forbid echoing credentials/PII", () => {
     for (const a of AGENTS) {
       expect(a.instructions).toContain(`actor "${a.id}"`);
