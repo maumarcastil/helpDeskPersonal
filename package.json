@@ -11,7 +11,8 @@
     "build": "tsc -p tsconfig.build.json",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "dev": "tsx src/infrastructure/mcp/main.ts",
+    "dev": "tsx src/app/mcp/main.ts",
+    "start": "node dist/src/app/mcp/main.js",
     "generate": "tsx tools/generator/cli.ts",
     "generate:check": "tsx tools/generator/cli.ts --check",
     "prepare": "npm run build"
