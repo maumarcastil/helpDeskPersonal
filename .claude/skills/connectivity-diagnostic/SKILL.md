@@ -72,7 +72,11 @@ If a precondition fails, do not call `run_diagnostic`; follow the matching row i
      fix works, call
      `update_ticket({ ticketId, actor: "diagnostic", transition: { to: "Resolved", basis: "user-confirmed", diagnosticEvidence: { runId }, timestamp } })`
      with `timestamp` as the current ISO-8601 time. The server decides whether the
-     re-check is good enough.
+     re-check is good enough. If the user says the problem is still there, call
+     `update_ticket({ ticketId, actor: "diagnostic", transition: { to: "Escalated", escalationReason: "user_not_fixed", target } })`
+     with `target` from [Escalation target](#escalation-target), and tell the user
+     who now owns the case. If the user has not answered yet, do nothing: leave the
+     ticket in `PendingUserConfirmation`.
    - `escalate` → first check [Failure handling](#failure-handling) for the one
      allowed retry (`timeout` only). Otherwise call
      `update_ticket({ ticketId, actor: "diagnostic", transition: { to: "Escalated", escalationReason: decision.reason, target } })`
