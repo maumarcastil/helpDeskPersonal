@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentDefinition, GeneratorModel, PromptDefinition } from "./definitions/schema.js";
-import { validateModel } from "./validate.js";
+import { assertValidated, findEntryAgents, RESERVED_IDS, validateModel } from "./validate.js";
 
 const MCP_SERVER: GeneratorModel["mcpServer"] = {
   name: "helpdesk",
@@ -152,6 +152,26 @@ describe("validateModel: table-driven rule checks", () => {
       expectOk: false,
       errorIncludes: "extra",
     },
+    {
+      name: "two agents each with no incoming handoffs (no unique entry agent) - this would otherwise pass and later crash the Claude Code/OpenCode renderers",
+      model: model({
+        agents: [agent({ id: "a" }), agent({ id: "b", role: "diagnostic" })],
+      }),
+      expectOk: false,
+      errorIncludes: "entry agent",
+    },
+    {
+      name: "an agent id collides with the reserved OpenCode orchestrator id",
+      model: model({ agents: [agent({ id: RESERVED_IDS.opencodeOrchestratorAgentId })] }),
+      expectOk: false,
+      errorIncludes: "reserved",
+    },
+    {
+      name: "a prompt id collides with the reserved Claude Code driver command id",
+      model: model({ prompts: [prompt({ id: RESERVED_IDS.claudeCodeDriverCommandId })] }),
+      expectOk: false,
+      errorIncludes: "reserved",
+    },
   ];
 
   it.each(cases)("$name", ({ model: m, expectOk, errorIncludes }) => {
@@ -259,5 +279,41 @@ describe("validateModel: longestHandoffPath", () => {
       }),
     );
     expect(result.longestHandoffPath).toBe(2);
+  });
+});
+
+describe("findEntryAgents", () => {
+  it("returns the one agent no other agent hands off to", () => {
+    const agents = [agent({ id: "a", handoffs: ["b"] }), agent({ id: "b", role: "diagnostic" })];
+    expect(findEntryAgents(agents).map((a) => a.id)).toEqual(["a"]);
+  });
+
+  it("returns every agent when none of them is a handoff target (multiple independent roots)", () => {
+    const agents = [agent({ id: "a" }), agent({ id: "b", role: "diagnostic" })];
+    expect(findEntryAgents(agents).map((a) => a.id).sort()).toEqual(["a", "b"]);
+  });
+
+  it("returns an empty array when every agent is targeted (e.g. a full cycle)", () => {
+    const agents = [
+      agent({ id: "a", handoffs: ["b"] }),
+      agent({ id: "b", role: "diagnostic", handoffs: ["a"] }),
+    ];
+    expect(findEntryAgents(agents)).toEqual([]);
+  });
+});
+
+describe("assertValidated", () => {
+  it("returns a ValidatedModel carrying the model and its longestHandoffPath for a valid model", () => {
+    const m = model({
+      agents: [agent({ id: "a", handoffs: ["b"] }), agent({ id: "b", role: "diagnostic" })],
+    });
+    const validated = assertValidated(m);
+    expect(validated.model).toBe(m);
+    expect(validated.longestHandoffPath).toBe(1);
+  });
+
+  it("throws, naming every violation, for an invalid model", () => {
+    const m = model({ agents: [agent({ id: "triage", handoffs: ["ghost"] })] });
+    expect(() => assertValidated(m)).toThrow(/unknown agent "ghost"/);
   });
 });

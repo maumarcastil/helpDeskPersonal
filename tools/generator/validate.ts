@@ -20,6 +20,69 @@ export interface ValidationResult {
 }
 
 /**
+ * Ids reserved for renderer-*synthesized* output that is never authored as
+ * a real `AgentDefinition`/`PromptDefinition`: OpenCode's derived
+ * `helpdesk-orchestrator` primary agent (`opencode-renderer.ts`) and Claude
+ * Code's derived `helpdesk-run` driver command (`claude-code-renderer.ts`).
+ * Neither renderer ever checks a real definition's id against these before
+ * emitting its synthetic file, so a definition that reused one of these ids
+ * would previously render to the exact same path as the synthetic file
+ * (two different `RenderedFile`s, one path, silently overwriting each other
+ * once written to disk). Exported as the single source of truth: both
+ * `validateModel` below (which now rejects a colliding id before any file
+ * is ever rendered) and the two renderers (which synthesize their path
+ * segment from these exact values, never a separate hard-coded literal)
+ * read from here.
+ */
+export const RESERVED_IDS = {
+  opencodeOrchestratorAgentId: "helpdesk-orchestrator",
+  claudeCodeDriverCommandId: "helpdesk-run",
+} as const;
+
+/**
+ * Nominal brand for `ValidatedModel`: a plain `{ model, longestHandoffPath }`
+ * object literal does not satisfy this type (it is missing the brand
+ * property, and nothing outside this module can name
+ * `VALIDATED_MODEL_BRAND` to add one), so `tsc` rejects any attempt to
+ * construct a `ValidatedModel` other than through `assertValidated` below.
+ * This is a compile-time guarantee only — the brand carries no runtime
+ * value — enforced by `npm run typecheck`, not by anything checked at
+ * render time.
+ */
+declare const VALIDATED_MODEL_BRAND: unique symbol;
+
+/**
+ * `validateModel`'s two outputs a renderer actually needs: the schema- and
+ * graph-checked model itself, and the handoff graph's longest path (edges),
+ * which the Claude Code and OpenCode renderers (tasks 6.8-6.9) use to state
+ * their driver's numeric hard-stop bound. The nominal brand above is what
+ * actually enforces the sentence this type's name promises: every
+ * `ValidatedModel` in the codebase, test fixtures included, is produced by
+ * `assertValidated`, never assembled ad hoc.
+ */
+export interface ValidatedModel {
+  readonly model: GeneratorModel;
+  readonly longestHandoffPath: number;
+  readonly [VALIDATED_MODEL_BRAND]: true;
+}
+
+/**
+ * The only way to construct a `ValidatedModel`. Runs `validateModel` and
+ * throws (naming every violation) if it fails; otherwise returns the
+ * validated model, asserting the nominal brand `ValidatedModel` requires.
+ * The `as ValidatedModel` cast is confined to this one function — everywhere
+ * else, TypeScript itself rejects a `{ model, longestHandoffPath }` literal
+ * that skips this path.
+ */
+export function assertValidated(model: GeneratorModel): ValidatedModel {
+  const result = validateModel(model);
+  if (!result.ok) {
+    throw new Error(`model failed validation: ${result.errors.join("; ")}`);
+  }
+  return { model, longestHandoffPath: result.longestHandoffPath } as ValidatedModel;
+}
+
+/**
  * Validates a whole `GeneratorModel` before any file is emitted (ADR 0009:
  * "Any failure aborts the build with no files written"). Collects every
  * violation rather than stopping at the first one: a definitions author
@@ -56,10 +119,12 @@ export function validateModel(model: GeneratorModel): ValidationResult {
   const agentsById = new Map(validatedModel.agents.map((agent) => [agent.id, agent]));
 
   errors.push(...findDuplicateIds(validatedModel));
+  errors.push(...findReservedIdViolations(validatedModel));
   errors.push(...findUnknownHandoffTargets(validatedModel.agents, agentsById));
   errors.push(...findUnknownPromptAgents(validatedModel));
   errors.push(...findSelfLoops(validatedModel.agents));
   errors.push(...findForbiddenCapabilityViolations(validatedModel.agents));
+  errors.push(...findEntryAgentViolations(validatedModel.agents));
   for (const prompt of validatedModel.prompts) {
     errors.push(...checkPromptTemplate(prompt));
   }
@@ -122,6 +187,57 @@ function findUnknownPromptAgents(model: GeneratorModel): string[] {
     }
   }
   return errors;
+}
+
+function findReservedIdViolations(model: GeneratorModel): string[] {
+  const reserved = new Set<string>(Object.values(RESERVED_IDS));
+  const errors: string[] = [];
+  for (const agent of model.agents) {
+    if (reserved.has(agent.id)) {
+      errors.push(
+        `agent id "${agent.id}" is reserved for generator-synthesized output and cannot be used by a definition`,
+      );
+    }
+  }
+  for (const prompt of model.prompts) {
+    if (reserved.has(prompt.id)) {
+      errors.push(
+        `prompt id "${prompt.id}" is reserved for generator-synthesized output and cannot be used by a definition`,
+      );
+    }
+  }
+  return errors;
+}
+
+/**
+ * The agent no other agent hands off to: the unique starting point the
+ * Claude Code driver command and the OpenCode derived orchestrator both
+ * assume (tasks 6.8-6.9). Exported so those renderers compute it through
+ * this exact same function rather than each re-deriving it, and so their
+ * own defensive check can never diverge from the rule `validateModel`
+ * enforces below.
+ */
+export function findEntryAgents(agents: readonly AgentDefinition[]): readonly AgentDefinition[] {
+  const targeted = new Set(agents.flatMap((agent) => agent.handoffs));
+  return agents.filter((agent) => !targeted.has(agent.id));
+}
+
+/**
+ * Rejects any model without exactly one entry agent. Before this rule
+ * existed, a model with e.g. two independent handoff roots passed
+ * `validateModel` successfully and only failed later, at render time, when
+ * the Claude Code and OpenCode renderers' own `findEntryAgent` each threw —
+ * making a renderer the first place an otherwise-valid-looking model's
+ * actual shape problem surfaced. Running the same check here means an
+ * invalid model is rejected before any file is ever rendered, with every
+ * other violation reported alongside it.
+ */
+function findEntryAgentViolations(agents: readonly AgentDefinition[]): string[] {
+  const entries = findEntryAgents(agents);
+  if (entries.length === 1) return [];
+  return [
+    `expected exactly one entry agent (an agent no other agent hands off to, so a renderer knows where the driven sequence starts), found ${entries.length}: ${entries.map((a) => a.id).join(", ") || "none"}`,
+  ];
 }
 
 function findSelfLoops(agents: readonly AgentDefinition[]): string[] {

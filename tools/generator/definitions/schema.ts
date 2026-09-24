@@ -121,14 +121,18 @@ export type GeneratorModel = z.infer<typeof GeneratorModelSchema>;
 const PLACEHOLDER_RE = /\{\{(\w+)\}\}/g;
 
 /**
- * Matches ANY `{{...}}` span (no nested braces), valid or not, so
- * `checkPromptTemplate` can tell a malformed placeholder (e.g.
- * `{{ ticket id }}` or `{{ticket-id}}`) from literal text. `PLACEHOLDER_RE`
- * above only matches the valid `\w+` shape, so without this a malformed span
- * would silently fall through as literal text and every renderer would emit
- * it verbatim instead of substituting a value.
+ * Matches a maximal run of consecutive `{` or consecutive `}` characters.
+ * `findMalformedPlaceholders` below walks these runs in pairs (an opening
+ * run followed by a closing run) rather than matching `\{\{...\}\}`
+ * directly: a fixed two-brace regex either misses an extra brace around an
+ * otherwise valid name (`{{{ticketId}}}`, a 3-run open paired with a 3-run
+ * close) or misses an unclosed span entirely (`{{ticketId}`, a 2-run open
+ * paired with only a 1-run close never matches `\{\{[^{}]*\}\}`'s required
+ * two closing braces, so it silently falls through as literal text).
+ * Comparing each pair's actual run *lengths* (not just requiring exactly
+ * two braces up front) is what catches both.
  */
-const ANY_BRACE_SPAN_RE = /\{\{([^{}]*)\}\}/g;
+const BRACE_RUN_RE = /\{+|\}+/g;
 const VALID_PLACEHOLDER_NAME_RE = /^\w+$/;
 
 /** Every `{{param}}` placeholder found in `template`, in order of appearance (duplicates kept). */
@@ -137,16 +141,45 @@ export function extractPlaceholders(template: string): readonly string[] {
 }
 
 /**
- * Every `{{...}}` span in `template` whose inside is not a valid single-word
- * placeholder name, returned as the full `{{...}}` text (e.g. `"{{ticket-id}}"`).
+ * Every `{{...}}`-shaped span in `template` that is not a well-formed
+ * `{{name}}` placeholder, returned as the full offending text (e.g.
+ * `"{{ticket-id}}"`, `"{{{ticketId}}}"`, `"{{ticketId}"`). Also flags a
+ * stray opening run with no closing run at all, and a stray closing run
+ * with no still-open opening run before it.
  */
 function findMalformedPlaceholders(template: string): readonly string[] {
   const malformed: string[] = [];
-  for (const match of template.matchAll(ANY_BRACE_SPAN_RE)) {
-    if (!VALID_PLACEHOLDER_NAME_RE.test(match[1] as string)) {
-      malformed.push(match[0]);
+  const runs = [...template.matchAll(BRACE_RUN_RE)];
+
+  for (let i = 0; i < runs.length; i++) {
+    const run = runs[i] as RegExpMatchArray;
+    const openRun = run[0] as string;
+
+    if (openRun.startsWith("}")) {
+      // A closing run with no unpaired opening run before it.
+      malformed.push(openRun);
+      continue;
     }
+
+    const next = runs[i + 1] as RegExpMatchArray | undefined;
+    const closeRun = next?.[0] as string | undefined;
+    if (!next || !closeRun?.startsWith("}")) {
+      // An opening run with nothing (or another opening run) after it.
+      malformed.push(openRun);
+      continue;
+    }
+
+    const contentStart = (run.index as number) + openRun.length;
+    const contentEnd = next.index as number;
+    const content = template.slice(contentStart, contentEnd);
+    const span = template.slice(run.index as number, contentEnd + closeRun.length);
+
+    if (openRun.length !== 2 || closeRun.length !== 2 || !VALID_PLACEHOLDER_NAME_RE.test(content)) {
+      malformed.push(span);
+    }
+    i++; // this pair's closing run is consumed; do not re-visit it on its own
   }
+
   return malformed;
 }
 
