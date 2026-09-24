@@ -187,4 +187,17 @@ describe("applyRemediation — success", () => {
     });
     expect(p.auditLog.entries.map((e) => e.type)).toEqual(["remediation.applied"]);
   });
+
+  it("returns the appended audit entry's id as auditRef (design: apply_remediation output includes auditRef)", async () => {
+    const ticket = ticketWithRemediateDecision();
+    const p = ports(ticket);
+    const result = await applyRemediation(p, {
+      ticketId: ticket.id,
+      actor: "diagnostic",
+      runId: "run_1" as RunId,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.auditRef).toBe(p.auditLog.entries[0]?.id);
+  });
 });

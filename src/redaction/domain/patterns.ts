@@ -46,6 +46,10 @@ function digitsOnly(text: string): string {
   return text.replace(/\D/g, "");
 }
 
+/** Matches this system's own opaque ids (see the `HIGH_ENTROPY` pattern's
+ *  `validate` below for why they must be excluded). */
+const INTERNAL_ID_RE = /^(?:(?:tkt|run|aud)_[0-9a-f]{32}|usr_[0-9a-f]{16})$/;
+
 /**
  * Ordered specific-before-generic (design "Redaction" section): a pattern
  * earlier in this array claims a matched region before any later pattern
@@ -118,6 +122,13 @@ export const REDACTION_PATTERNS: readonly RedactionPattern[] = [
     kind: "HIGH_ENTROPY",
     regex: /\b[A-Za-z0-9+/_=-]{32,}\b/g,
     validate: (matched) => {
+      // This system's own opaque ids (`CryptoIdGenerator`: `tkt_`/`run_`/
+      // `aud_` + 32 lowercase-hex chars; `HmacPseudonymizer`: `usr_` + 16
+      // lowercase-hex chars) are identifiers, not secrets. Every MCP tool
+      // response is redacted wholesale (defense in depth, task 4.5), so
+      // without this exclusion a client could never receive a usable
+      // ticket/run/audit id — discovered when wiring the first MCP tool.
+      if (INTERNAL_ID_RE.test(matched)) return false;
       const classes = [/[a-z]/, /[A-Z]/, /[0-9]/, /[+/_=-]/].filter((re) =>
         re.test(matched),
       ).length;

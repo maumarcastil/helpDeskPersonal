@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 /**
@@ -71,8 +71,30 @@ describe("architecture: domain import rule", () => {
   });
 });
 
+/**
+ * Resolves a relative import specifier against the importing file's own
+ * directory (POSIX-style; this repo only ever runs on POSIX paths) so the
+ * guard can tell "escapes `src/` into the top-level `tools/` generator
+ * directory" apart from "is a same-tree directory that happens to be named
+ * `tools`" (e.g. `src/app/mcp/tools/`, Phase 4's MCP tool handlers - a
+ * false positive the original substring check did not anticipate).
+ */
+function resolveRelativeSpecifier(fromFile: string, specifier: string): string {
+  const segments = [...dirname(fromFile).split("/"), ...specifier.split("/")];
+  const resolved: string[] = [];
+  for (const segment of segments) {
+    if (segment === "" || segment === ".") continue;
+    if (segment === "..") {
+      resolved.pop();
+      continue;
+    }
+    resolved.push(segment);
+  }
+  return resolved.join("/");
+}
+
 describe("architecture: generator isolation", () => {
-  it("no file under src/ imports from tools/", () => {
+  it("no file under src/ imports from the top-level tools/ generator directory", () => {
     const files = listFiles("src");
     expect(files.length).toBeGreaterThan(0);
 
@@ -80,7 +102,9 @@ describe("architecture: generator isolation", () => {
     for (const file of files) {
       const specifiers = importSpecifiers(readFileSync(file, "utf8"));
       for (const specifier of specifiers) {
-        if (specifier.includes("/tools/") || specifier.startsWith("tools/")) {
+        if (!specifier.startsWith(".")) continue; // only a relative specifier can escape src/
+        const resolved = resolveRelativeSpecifier(file, specifier);
+        if (resolved === "tools" || resolved.startsWith("tools/")) {
           offenders.push(`${file} imports "${specifier}"`);
         }
       }

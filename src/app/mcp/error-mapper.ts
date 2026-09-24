@@ -1,3 +1,4 @@
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { DomainError, DomainErrorCode } from "../../shared/domain/domain-error.js";
 
 export type ClientErrorCode = DomainErrorCode | "INTERNAL_ERROR";
@@ -8,12 +9,6 @@ export interface ToolErrorEnvelope {
     readonly message: string;
     readonly details?: Record<string, unknown>;
   };
-}
-
-export interface ToolErrorResult {
-  readonly isError: true;
-  readonly structuredContent: ToolErrorEnvelope;
-  readonly content: readonly [{ readonly type: "text"; readonly text: string }];
 }
 
 /**
@@ -43,10 +38,10 @@ function assertKnownDomainErrorCode(code: DomainErrorCode): void {
   }
 }
 
-function buildResult(envelope: ToolErrorEnvelope): ToolErrorResult {
+function buildResult(envelope: ToolErrorEnvelope): CallToolResult {
   return {
     isError: true,
-    structuredContent: envelope,
+    structuredContent: { ...envelope },
     content: [{ type: "text", text: JSON.stringify(envelope) }],
   };
 }
@@ -58,7 +53,7 @@ function buildResult(envelope: ToolErrorEnvelope): ToolErrorResult {
  * that way) - this function's job is the exhaustive code check plus
  * shaping the envelope, not re-validating the message content.
  */
-export function mapDomainError(error: DomainError): ToolErrorResult {
+export function mapDomainError(error: DomainError): CallToolResult {
   assertKnownDomainErrorCode(error.code);
   return buildResult({
     error:
@@ -76,7 +71,7 @@ export function mapDomainError(error: DomainError): ToolErrorResult {
  * the full detail goes to stderr only - stdout is the MCP protocol stream
  * and must stay clean of anything but protocol frames.
  */
-export function mapUnexpectedError(error: unknown): ToolErrorResult {
+export function mapUnexpectedError(error: unknown): CallToolResult {
   const message = error instanceof Error ? error.message : String(error);
   const stack = error instanceof Error ? error.stack : undefined;
   process.stderr.write(`[helpdesk] INTERNAL_ERROR: ${message}\n${stack ?? ""}\n`);
