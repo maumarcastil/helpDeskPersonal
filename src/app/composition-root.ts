@@ -6,6 +6,7 @@ import { JsonlAuditLog } from "../audit/infrastructure/jsonl-audit-log.js";
 import type { AuditLog } from "../audit/ports/audit-log.js";
 import type { Hasher } from "../audit/ports/hasher.js";
 import { ChildProcessDiagnosticRunner } from "../diagnostics/infrastructure/child-process-diagnostic-runner.js";
+import { resolveProbeLaunch } from "../diagnostics/infrastructure/probe-launcher.js";
 import { JsonServiceCatalog } from "../diagnostics/infrastructure/json-service-catalog.js";
 import type { DiagnosticRunner } from "../diagnostics/ports/diagnostic-runner.js";
 import type { ServiceCatalog } from "../diagnostics/ports/service-catalog.js";
@@ -52,8 +53,7 @@ import type { AppConfig } from "./config/load-config.js";
 import { CryptoIdGenerator } from "./system/crypto-id-generator.js";
 import { SystemClock } from "./system/system-clock.js";
 
-const PROBE_SCRIPT_RELATIVE_PATH = join("scripts", "connectivity-probe.ts");
-const TSX_BIN_RELATIVE_PATH = join("node_modules", ".bin", "tsx");
+
 
 export interface Ports {
   readonly clock: Clock;
@@ -122,11 +122,14 @@ function buildDefaultPorts(config: AppConfig, overrides: Partial<Ports>): Ports 
     serviceCatalog: overrides.serviceCatalog ?? new JsonServiceCatalog(config.serviceCatalogPath),
     diagnosticRunner:
       overrides.diagnosticRunner ??
-      new ChildProcessDiagnosticRunner({
-        scriptPath: join(config.packageRoot, PROBE_SCRIPT_RELATIVE_PATH),
-        tsxBinPath: join(config.packageRoot, TSX_BIN_RELATIVE_PATH),
-        parentEnv: { ...process.env, HELPDESK_PROBE_MODE: config.probeMode },
-      }),
+      (() => {
+        const launch = resolveProbeLaunch(config.packageRoot);
+        return new ChildProcessDiagnosticRunner({
+          scriptPath: launch.scriptPath,
+          ...(launch.tsxBinPath !== undefined ? { tsxBinPath: launch.tsxBinPath } : {}),
+          parentEnv: { ...process.env, HELPDESK_PROBE_MODE: config.probeMode },
+        });
+      })(),
   };
 }
 

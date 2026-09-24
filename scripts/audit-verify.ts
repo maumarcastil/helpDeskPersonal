@@ -26,12 +26,25 @@
  * model session. The MCP server itself never calls this script.
  */
 
+import { createHash } from "node:crypto";
 import { createReadStream, existsSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { argv as processArgv, stderr, stdout } from "node:process";
 import type { AuditEntry } from "../src/audit/domain/audit-entry.js";
 import { type ChainVerification, verifyChain } from "../src/audit/domain/hash-chain.js";
-import { NodeSha256Hasher } from "../src/audit/infrastructure/node-sha256-hasher.js";
+
+/**
+ * Local SHA-256 hex helper. The script deliberately does not depend
+ * on `src/audit/infrastructure/node-sha256-hasher.js` because the
+ * architecture guard forbids `scripts/` from importing a capability's
+ * `infrastructure/` layer. The math is the same; the helper just
+ * duplicates the one-line stdlib invocation so the CLI stays
+ * standalone (mirrors how `connectivity-probe.ts` uses `node:net` and
+ * `node:dns/promises` directly).
+ */
+function sha256Hex(input: string): string {
+  return createHash("sha256").update(input, "utf8").digest("hex");
+}
 
 /** Default audit log path, relative to the caller's cwd. */
 export const DEFAULT_LOG_PATH = "data/audit.jsonl";
@@ -81,9 +94,8 @@ export async function verifyAuditFile(
 
 async function main(): Promise<number> {
   const logPath = processArgv[2] ?? DEFAULT_LOG_PATH;
-  const hasher = new NodeSha256Hasher();
   try {
-    const result = await verifyAuditFile(logPath, hasher.sha256Hex.bind(hasher));
+    const result = await verifyAuditFile(logPath, sha256Hex);
     if (result.valid) {
       stdout.write(`ok: ${logPath} (chain valid, ${result.entryCount} entries)\n`);
       return 0;

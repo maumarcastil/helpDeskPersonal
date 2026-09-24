@@ -48,6 +48,43 @@ describe("ChildProcessDiagnosticRunner", () => {
       }
       runner.dispose();
     });
+
+    it("built path: when tsxBinPath is omitted, the runner spawns `node <scriptPath>` directly (ADR 0014)", async () => {
+      // Write a fixture script that is plain JS (no .ts), so the
+      // tsxBinPath branch must be skipped; if the runner incorrectly
+      // tried to prepend tsx, the spawn would either fail with
+      // ENOENT on the tsx binary or surface a "Cannot find module"
+      // because tsx is given a .js that is not registered as a TS
+      // file (some tsx versions refuse it).
+      const jsFixture = join(workDir, "minimal-probe.js");
+      writeFileSync(
+        jsFixture,
+        [
+          `const r = {`,
+          `  schemaVersion: 1, probe: "connectivity", mode: "mock",`,
+          `  target: "tcp://vpn.example.com:443", status: "reachable",`,
+          `  checks: [{ name: "tcp", ok: true, latencyMs: 1 }],`,
+          `  startedAt: new Date().toISOString(), finishedAt: new Date().toISOString(),`,
+          `};`,
+          `process.stdout.write(JSON.stringify(r) + "\\n");`,
+          `process.exit(0);`,
+        ].join("\n"),
+        "utf8",
+      );
+      const runner = new (await importRunner())({
+        scriptPath: jsFixture,
+        // tsxBinPath intentionally omitted: built path.
+        parentEnv: {},
+      });
+      const outcome = await runner.run(fakeRequest({ timeoutMs: 2000 }));
+      expect(outcome.kind).toBe("completed");
+      if (outcome.kind === "completed") {
+        const parsed = DiagnosticReportSchema.safeParse(outcome.report);
+        expect(parsed.success).toBe(true);
+        expect(outcome.report.status).toBe("reachable");
+      }
+      runner.dispose();
+    });
   });
 
   describe("threat matrix — every failure path surfaces RunnerOutcome.failed, never a successful DiagnosticReport", () => {
@@ -100,7 +137,7 @@ describe("ChildProcessDiagnosticRunner", () => {
       const oversizedPath = join(workDir, "oversize.ts");
       writeFileSync(
         oversizedPath,
-        `process.stdout.write("a".repeat(70 * 1024) + "\\n"); process.exit(0);\n`,
+        `process.stdout.write("a".repeat(70 * 1024) + "\\n", () => process.exit(0));\n`,
         "utf8",
       );
       const runner = new (await importRunner())({
@@ -211,7 +248,7 @@ describe("ChildProcessDiagnosticRunner", () => {
       const oversizedPath = join(workDir, "70kib.ts");
       writeFileSync(
         oversizedPath,
-        `process.stdout.write("a".repeat(70 * 1024) + "\\n"); process.exit(0);\n`,
+        `process.stdout.write("a".repeat(70 * 1024) + "\\n", () => process.exit(0));\n`,
         "utf8",
       );
       const runner = new (await importRunner())({
@@ -259,7 +296,7 @@ describe("ChildProcessDiagnosticRunner", () => {
 async function importRunner(): Promise<
   new (opts: {
     scriptPath: string;
-    tsxBinPath: string;
+    tsxBinPath?: string;
     parentEnv?: NodeJS.ProcessEnv;
   }) => import("./child-process-diagnostic-runner.js").ChildProcessDiagnosticRunner
 > {
@@ -268,7 +305,7 @@ async function importRunner(): Promise<
   const mod = await import("./child-process-diagnostic-runner.js");
   return mod.ChildProcessDiagnosticRunner as unknown as new (opts: {
     scriptPath: string;
-    tsxBinPath: string;
+    tsxBinPath?: string;
     parentEnv?: NodeJS.ProcessEnv;
   }) => import("./child-process-diagnostic-runner.js").ChildProcessDiagnosticRunner;
 }
