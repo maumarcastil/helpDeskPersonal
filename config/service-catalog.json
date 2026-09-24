@@ -1,0 +1,47 @@
+{
+  "$schema": "internal",
+  "version": 1,
+  "services": {
+    "vpn-gateway": {
+      "displayName": "Corporate VPN gateway",
+      "category": "infrastructure-software",
+      "subcategory": "vpn",
+      "probe": {
+        "scheme": "tcp",
+        "host": "vpn.example.com",
+        "port": 443,
+        "timeoutMs": 3000
+      }
+    },
+    "idp": {
+      "displayName": "Identity provider (SSO)",
+      "category": "access-identity",
+      "subcategory": "account-locked",
+      "probe": {
+        "scheme": "https",
+        "host": "idp.example.com",
+        "port": 443,
+        "path": "/healthz",
+        "timeoutMs": 3000
+      }
+    },
+    "internal-app": {
+      "displayName": "Corporate internal app",
+      "category": "infrastructure-software",
+      "subcategory": "corporate-app",
+      "probe": {
+        "scheme": "https",
+        "host": "app.internal.example.com",
+        "port": 443,
+        "path": "/health",
+        "timeoutMs": 3000
+      }
+    },
+    "shared-drive": {
+      "displayName": "Shared drive provisioning",
+      "category": "provisioning-permissions",
+      "subcategory": "folder-repo-access",
+      "probe": null
+    }
+  }
+}

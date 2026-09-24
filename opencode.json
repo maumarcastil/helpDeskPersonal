@@ -1,0 +1,17 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "helpdesk": {
+      "type": "local",
+      "command": [
+        "npx",
+        "tsx",
+        "src/app/mcp/main.ts"
+      ],
+      "environment": {
+        "HELPDESK_PSEUDONYM_KEY": "{env:HELPDESK_PSEUDONYM_KEY}"
+      },
+      "enabled": true
+    }
+  }
+}

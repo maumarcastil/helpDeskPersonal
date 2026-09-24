@@ -1,0 +1,31 @@
+{
+  "name": "helpdesk-agent-ecosystem",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Deterministic help desk ticket core exposed as a stdio MCP server, with agent definitions generated for VS Code, Claude Code and OpenCode.",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "dev": "tsx src/app/mcp/main.ts",
+    "start": "node dist/src/app/mcp/main.js",
+    "generate": "tsx tools/generator/cli.ts",
+    "generate:check": "tsx tools/generator/cli.ts --check",
+    "probe": "tsx scripts/connectivity-probe.ts",
+    "prepare": "npm run build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.1",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.1"
+  }
+}
