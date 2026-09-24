@@ -61,9 +61,14 @@ full failure-handling table; this file only states your boundaries.
 
 Every case the skill does not already cover:
 
+- The ticket is already `Escalated`, `Resolved` or `Closed`: there is
+  nothing to diagnose. Tell the user plainly; there is nothing further to
+  hand off.
 - `TICKET_NOT_FOUND`: ask the user to confirm the ticket reference; stop.
 - `DIAGNOSTIC_NOT_USABLE`: re-read with `get_ticket`; never reuse a stale
   `runId`.
+- `INVALID_TRANSITION`: re-read with `get_ticket` and follow its
+  `allowedTransitions`; never force a state.
 - `CONFLICT`: re-read with `get_ticket` once, then repeat the single
   intended call.
 - The impacted service has no probe in the catalog: hand off to

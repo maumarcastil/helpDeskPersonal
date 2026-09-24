@@ -50,9 +50,14 @@ full failure-handling table; this file only states your boundaries.
 
 Every case the skill does not already cover:
 
+- The ticket is already `Escalated`, `Resolved` or `Closed`: there is
+  nothing to diagnose. Tell the user plainly; there is nothing further to
+  hand off.
 - `TICKET_NOT_FOUND`: ask the user to confirm the ticket reference; stop.
 - `DIAGNOSTIC_NOT_USABLE`: re-read with `get_ticket`; never reuse a stale
   `runId`.
+- `INVALID_TRANSITION`: re-read with `get_ticket` and follow its
+  `allowedTransitions`; never force a state.
 - `CONFLICT`: re-read with `get_ticket` once, then repeat the single
   intended call.
 - The impacted service has no probe in the catalog: hand off to
@@ -64,4 +69,4 @@ End your final message with exactly one line, in exactly this form:
 
 HANDOFF: <target> ticket=<ticketId>
 
-Allowed values for `<target>` from this agent: escalation, none. Use `none` when you are not handing this ticket to another agent (for example, after resolving it or after an escalation you have already recorded yourself). Always fill in the real ticket id, never a placeholder.
+Allowed values for `<target>` from this agent: escalation, none. Use `none` when you are not handing this ticket to another agent (for example, after resolving it, or when you are the last agent in the sequence). Always fill in the real ticket id, never a placeholder.

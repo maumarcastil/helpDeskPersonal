@@ -107,9 +107,14 @@ full failure-handling table; this file only states your boundaries.
 
 Every case the skill does not already cover:
 
+- The ticket is already \`Escalated\`, \`Resolved\` or \`Closed\`: there is
+  nothing to diagnose. Tell the user plainly; there is nothing further to
+  hand off.
 - \`TICKET_NOT_FOUND\`: ask the user to confirm the ticket reference; stop.
 - \`DIAGNOSTIC_NOT_USABLE\`: re-read with \`get_ticket\`; never reuse a stale
   \`runId\`.
+- \`INVALID_TRANSITION\`: re-read with \`get_ticket\` and follow its
+  \`allowedTransitions\`; never force a state.
 - \`CONFLICT\`: re-read with \`get_ticket\` once, then repeat the single
   intended call.
 - The impacted service has no probe in the catalog: hand off to
@@ -136,19 +141,26 @@ hold no such capability.
 
 1. **Read the ticket.** Call \`get_ticket({ ticketId })\` for its current
    state and \`triage\` data.
-2. **Move it into progress if needed.** If the ticket is still \`Triaged\` or
-   \`Reopened\`, call
+2. **If it is already \`Escalated\`, do not transition it again.** A handoff
+   from \`diagnostic\` arrives on a ticket the diagnostic agent already moved
+   to \`Escalated\` itself before handing off; there is no
+   \`Escalated -> Escalated\` rule, so repeating the transition fails with
+   \`INVALID_TRANSITION\`. Instead, read \`escalationReason\` and \`target\` from
+   the ticket's own \`escalation\` data (returned by \`get_ticket\`), record
+   anything that earlier call did not already capture with \`append_audit\`
+   (\`kind: "agent_decision"\`), then skip to step 5.
+3. **Move it into progress if needed.** Only reached when the ticket is not
+   yet \`Escalated\`: if it is still \`Triaged\` or \`Reopened\`, call
    \`update_ticket({ ticketId, actor: "escalation", transition: { to: "InProgress" } })\`
    first (a handoff from triage can skip diagnosis straight to escalation).
-3. **Escalate.** Call
+4. **Escalate.** Call
    \`update_ticket({ ticketId, actor: "escalation", transition: { to: "Escalated", escalationReason, target, note } })\`
    with \`escalationReason\` one of \`diagnostic_failed\`, \`service_unreachable\`,
    \`not_allowlisted\`, \`no_diagnostic_available\`, \`user_not_fixed\` or
    \`user_request\`, and \`target\` one of \`identity-team\`, \`desktop-support\`,
    \`network-team\` or \`access-management\` based on \`triage.category\` /
-   \`triage.subcategory\`.
-4. **Record anything the transition itself did not capture** with
-   \`append_audit\` (\`kind: "agent_decision"\`).
+   \`triage.subcategory\`. Record anything the transition itself did not
+   capture with \`append_audit\` (\`kind: "agent_decision"\`).
 5. **Tell the user** which team now owns the case and that a resolution to
    \`Escalated\` only happens through a human agent from here.
 
