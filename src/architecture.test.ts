@@ -363,6 +363,21 @@ describe("architecture: scripts/ boundary", () => {
  */
 const ALLOWED_TOOLS_SRC_IMPORT = "src/app/mcp/tool-names";
 
+/**
+ * Shared by both tests below: resolves a relative import `specifier` from
+ * `file` against `resolveRelativeSpecifier` and strips a trailing `.js` (an
+ * ESM specifier extension the resolved `src/`-relative path never carries).
+ * Returns `undefined` for a non-relative specifier, which can never reach
+ * `src/` in the first place. Extracted (task 6.13b review suggestion) so
+ * the "relative specifier -> resolve -> strip `.js` -> compare" predicate
+ * exists once instead of being duplicated across the offender-collecting
+ * test and the sanity-check test.
+ */
+function resolvedToolsSrcTarget(file: string, specifier: string): string | undefined {
+  if (!specifier.startsWith(".")) return undefined; // only a relative specifier can reach src/
+  return resolveRelativeSpecifier(file, specifier).replace(/\.js$/, "");
+}
+
 describe("architecture: tools/generator/ imports only src/app/mcp/tool-names from src/ (task 6.13)", () => {
   it("no relative import under tools/generator/ resolves into src/ other than src/app/mcp/tool-names", () => {
     const files = listFiles("tools/generator");
@@ -372,9 +387,8 @@ describe("architecture: tools/generator/ imports only src/app/mcp/tool-names fro
     for (const file of files) {
       const specifiers = importSpecifiers(readFileSync(file, "utf8"));
       for (const specifier of specifiers) {
-        if (!specifier.startsWith(".")) continue; // only a relative specifier can reach src/
-        const resolved = resolveRelativeSpecifier(file, specifier).replace(/\.js$/, "");
-        if (resolved === ALLOWED_TOOLS_SRC_IMPORT) continue;
+        const resolved = resolvedToolsSrcTarget(file, specifier);
+        if (resolved === undefined || resolved === ALLOWED_TOOLS_SRC_IMPORT) continue;
         if (resolved === "src" || resolved.startsWith("src/")) {
           offenders.push(
             `${file} imports "${specifier}" (resolves to "${resolved}"; only "${ALLOWED_TOOLS_SRC_IMPORT}" is allowed)`,
@@ -389,12 +403,13 @@ describe("architecture: tools/generator/ imports only src/app/mcp/tool-names fro
     const files = listFiles("tools/generator");
     const importsToolNames = files.some((file) => {
       const specifiers = importSpecifiers(readFileSync(file, "utf8"));
-      return specifiers.some(
-        (specifier) =>
-          specifier.startsWith(".") &&
-          resolveRelativeSpecifier(file, specifier).replace(/\.js$/, "") === ALLOWED_TOOLS_SRC_IMPORT,
-      );
+      return specifiers.some((specifier) => resolvedToolsSrcTarget(file, specifier) === ALLOWED_TOOLS_SRC_IMPORT);
     });
     expect(importsToolNames).toBe(true);
+  });
+
+  it("src/app/mcp/tool-names.ts has zero imports, so the generator's one allowlisted src/ import pulls in nothing else transitively", () => {
+    const content = readFileSync("src/app/mcp/tool-names.ts", "utf8");
+    expect(importSpecifiers(content)).toEqual([]);
   });
 });
