@@ -86,19 +86,24 @@ export const PromptDefinitionSchema = z
   .strict();
 export type PromptDefinition = z.infer<typeof PromptDefinitionSchema>;
 
+/** An environment variable *name* (`HELPDESK_PSEUDONYM_KEY`), never a value or a `NAME=value` assignment. */
+const ENV_VAR_NAME_RE = /^[A-Z][A-Z0-9_]*$/;
+
 /**
  * The one MCP server every platform launches (feature document, decision
  * user-approved 2026-09-24: `npx tsx src/app/mcp/main.ts`). `env` lists
  * only environment variable *names* to pass through per-platform
  * interpolation (e.g. `HELPDESK_PSEUDONYM_KEY`) — never a value, so no
- * secret can ever be committed through this model.
+ * secret can ever be committed through this model. Each entry must match
+ * `ENV_VAR_NAME_RE` (SCREAMING_SNAKE_CASE), which rejects a `NAME=value`
+ * assignment or a raw secret string as firmly as it rejects an empty entry.
  */
 export const McpServerDefinitionSchema = z
   .object({
     name: z.literal("helpdesk"),
     command: z.literal("npx"),
     args: z.tuple([z.literal("tsx"), z.literal("src/app/mcp/main.ts")]),
-    env: z.array(z.string().min(1)),
+    env: z.array(z.string().regex(ENV_VAR_NAME_RE, "env entry must be an ENV_VAR_NAME (e.g. HELPDESK_PSEUDONYM_KEY), never a value or NAME=value assignment")),
   })
   .strict();
 export type McpServerDefinition = z.infer<typeof McpServerDefinitionSchema>;
@@ -112,8 +117,19 @@ export const GeneratorModelSchema = z
   .strict();
 export type GeneratorModel = z.infer<typeof GeneratorModelSchema>;
 
-/** Matches a `{{param}}` placeholder; the captured group is the param name. */
+/** Matches a valid `{{param}}` placeholder; the captured group is the param name. */
 const PLACEHOLDER_RE = /\{\{(\w+)\}\}/g;
+
+/**
+ * Matches ANY `{{...}}` span (no nested braces), valid or not, so
+ * `checkPromptTemplate` can tell a malformed placeholder (e.g.
+ * `{{ ticket id }}` or `{{ticket-id}}`) from literal text. `PLACEHOLDER_RE`
+ * above only matches the valid `\w+` shape, so without this a malformed span
+ * would silently fall through as literal text and every renderer would emit
+ * it verbatim instead of substituting a value.
+ */
+const ANY_BRACE_SPAN_RE = /\{\{([^{}]*)\}\}/g;
+const VALID_PLACEHOLDER_NAME_RE = /^\w+$/;
 
 /** Every `{{param}}` placeholder found in `template`, in order of appearance (duplicates kept). */
 export function extractPlaceholders(template: string): readonly string[] {
@@ -121,13 +137,31 @@ export function extractPlaceholders(template: string): readonly string[] {
 }
 
 /**
+ * Every `{{...}}` span in `template` whose inside is not a valid single-word
+ * placeholder name, returned as the full `{{...}}` text (e.g. `"{{ticket-id}}"`).
+ */
+function findMalformedPlaceholders(template: string): readonly string[] {
+  const malformed: string[] = [];
+  for (const match of template.matchAll(ANY_BRACE_SPAN_RE)) {
+    if (!VALID_PLACEHOLDER_NAME_RE.test(match[1] as string)) {
+      malformed.push(match[0]);
+    }
+  }
+  return malformed;
+}
+
+/**
  * Checks one prompt's template against its declared `params`, per ADR
  * 0009's template contract:
  *
- *  1. the set of `{{param}}` placeholders in `template` equals the set of
+ *  1. every `{{...}}` span in `template` is a well-formed single-word
+ *     placeholder (no internal spaces, hyphens or other punctuation),
+ *  2. the set of `{{param}}` placeholders in `template` equals the set of
  *     declared param names (both directions — an undeclared placeholder
- *     and an unused declared param are both errors), and
- *  2. either exactly one free-text parameter (and it is the prompt's only
+ *     and an unused declared param are both errors),
+ *  3. no param name is declared more than once (renderers map params by
+ *     position, so a duplicate name is ambiguous), and
+ *  4. either exactly one free-text parameter (and it is the prompt's only
  *     parameter), or every parameter is single-token.
  *
  * Returns all violations found (never throws) so `validate.ts` can fold
@@ -135,8 +169,30 @@ export function extractPlaceholders(template: string): readonly string[] {
  */
 export function checkPromptTemplate(prompt: PromptDefinition): readonly string[] {
   const errors: string[] = [];
+
+  for (const malformed of findMalformedPlaceholders(prompt.template)) {
+    errors.push(
+      `prompt "${prompt.id}": malformed placeholder ${malformed} (a placeholder must be a single word, e.g. "{{ticketId}}", with no spaces, hyphens or punctuation)`,
+    );
+  }
+
   const placeholders = new Set(extractPlaceholders(prompt.template));
-  const declared = new Set(prompt.params.map((param) => param.name));
+  const paramNames = prompt.params.map((param) => param.name);
+  const declared = new Set(paramNames);
+
+  if (declared.size !== paramNames.length) {
+    const seen = new Set<string>();
+    const duplicates = new Set<string>();
+    for (const name of paramNames) {
+      if (seen.has(name)) duplicates.add(name);
+      seen.add(name);
+    }
+    for (const name of duplicates) {
+      errors.push(
+        `prompt "${prompt.id}": duplicate declared param "${name}" (renderers map params by position, so a duplicate name is ambiguous)`,
+      );
+    }
+  }
 
   for (const placeholder of placeholders) {
     if (!declared.has(placeholder)) {

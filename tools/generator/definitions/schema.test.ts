@@ -112,6 +112,36 @@ describe("McpServerDefinitionSchema", () => {
     });
     expect(result.success).toBe(false);
   });
+
+  it("rejects an env entry shaped like a NAME=value assignment", () => {
+    const result = McpServerDefinitionSchema.safeParse({
+      name: "helpdesk",
+      command: "npx",
+      args: ["tsx", "src/app/mcp/main.ts"],
+      env: ["HELPDESK_PSEUDONYM_KEY=super-secret"],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects an env entry that is a raw lowercase secret, not an ENV_VAR name", () => {
+    const result = McpServerDefinitionSchema.safeParse({
+      name: "helpdesk",
+      command: "npx",
+      args: ["tsx", "src/app/mcp/main.ts"],
+      env: ["sk-live-abc123"],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts a proper SCREAMING_SNAKE_CASE env var name", () => {
+    const result = McpServerDefinitionSchema.safeParse({
+      name: "helpdesk",
+      command: "npx",
+      args: ["tsx", "src/app/mcp/main.ts"],
+      env: ["HELPDESK_PSEUDONYM_KEY"],
+    });
+    expect(result.success).toBe(true);
+  });
 });
 
 describe("GeneratorModelSchema", () => {
@@ -206,5 +236,32 @@ describe("checkPromptTemplate", () => {
       }),
     );
     expect(errors.some((e) => e.includes("only parameter"))).toBe(true);
+  });
+
+  it("flags duplicate declared param names (renderers map params by position, so a duplicate is ambiguous)", () => {
+    const errors = checkPromptTemplate(
+      prompt({
+        template: "escalate {{ticketId}}",
+        params: [
+          { name: "ticketId", kind: "single-token" },
+          { name: "ticketId", kind: "single-token" },
+        ],
+      }),
+    );
+    expect(errors.some((e) => e.includes('duplicate declared param "ticketId"'))).toBe(true);
+  });
+
+  it("flags a malformed placeholder containing internal spaces", () => {
+    const errors = checkPromptTemplate(prompt({ template: "diagnose {{ ticket id }}", params: [] }));
+    expect(
+      errors.some((e) => e.includes("malformed placeholder") && e.includes("{{ ticket id }}")),
+    ).toBe(true);
+  });
+
+  it("flags a malformed placeholder containing a hyphen", () => {
+    const errors = checkPromptTemplate(prompt({ template: "diagnose {{ticket-id}}", params: [] }));
+    expect(errors.some((e) => e.includes("malformed placeholder") && e.includes("{{ticket-id}}"))).toBe(
+      true,
+    );
   });
 });

@@ -1,4 +1,11 @@
-import { checkPromptTemplate, type AgentDefinition, type GeneratorModel } from "./definitions/schema.js";
+import {
+  checkPromptTemplate,
+  GeneratorModelSchema,
+  type AgentDefinition,
+  type AgentRole,
+  type Capability,
+  type GeneratorModel,
+} from "./definitions/schema.js";
 
 export interface ValidationResult {
   readonly ok: boolean;
@@ -19,26 +26,55 @@ export interface ValidationResult {
  * fixing a batch of agents benefits from seeing every problem in one run,
  * the same way `applyTransition`'s `VALIDATION_ERROR` reports every zod
  * issue at once rather than one round-trip per field.
+ *
+ * `model` is only trusted to be well-typed at compile time; it may in fact
+ * be untrusted runtime data (a hand-edited definitions file, a future
+ * loader). So the very first check is `GeneratorModelSchema.safeParse`,
+ * which enforces everything zod can see on its own — kebab-case ids, the
+ * `strict()` object shapes, the capability/role enums, the env var name
+ * shape, and so on. The graph/template checks below (duplicate ids across
+ * agents and prompts, unknown handoff/prompt targets, cycles, role
+ * capability rules, placeholder/param matching) are cross-item rules zod
+ * cannot express on a single object, so they still run separately — but
+ * only once the schema parse itself succeeds. If it fails, this function
+ * reports every schema violation and stops there rather than running the
+ * graph checks over data it can no longer trust to have the right shape
+ * (e.g. a `handoffs` field that isn't actually an array would crash
+ * `Array.prototype.includes`, and any graph-level finding it could produce
+ * would be redundant with the schema violation already collected).
  */
 export function validateModel(model: GeneratorModel): ValidationResult {
   const errors: string[] = [];
-  const agentsById = new Map(model.agents.map((agent) => [agent.id, agent]));
 
-  errors.push(...findDuplicateIds(model));
-  errors.push(...findUnknownHandoffTargets(model.agents, agentsById));
-  errors.push(...findUnknownPromptAgents(model));
-  errors.push(...findSelfLoops(model.agents));
-  errors.push(...findTriageCapabilityViolations(model.agents));
-  for (const prompt of model.prompts) {
+  const parsed = GeneratorModelSchema.safeParse(model);
+  if (!parsed.success) {
+    errors.push(...parsed.error.issues.map(formatSchemaIssue));
+    return { ok: false, errors, longestHandoffPath: 0 };
+  }
+
+  const validatedModel = parsed.data;
+  const agentsById = new Map(validatedModel.agents.map((agent) => [agent.id, agent]));
+
+  errors.push(...findDuplicateIds(validatedModel));
+  errors.push(...findUnknownHandoffTargets(validatedModel.agents, agentsById));
+  errors.push(...findUnknownPromptAgents(validatedModel));
+  errors.push(...findSelfLoops(validatedModel.agents));
+  errors.push(...findForbiddenCapabilityViolations(validatedModel.agents));
+  for (const prompt of validatedModel.prompts) {
     errors.push(...checkPromptTemplate(prompt));
   }
 
-  const cycle = detectHandoffCycle(model.agents);
+  const cycle = detectHandoffCycle(validatedModel.agents);
   if (cycle) errors.push(cycle);
 
-  const longestHandoffPath = cycle ? 0 : computeLongestHandoffPath(model.agents);
+  const longestHandoffPath = cycle ? 0 : computeLongestHandoffPath(validatedModel.agents);
 
   return { ok: errors.length === 0, errors, longestHandoffPath };
+}
+
+function formatSchemaIssue(issue: { readonly path: readonly PropertyKey[]; readonly message: string }): string {
+  const path = issue.path.length > 0 ? issue.path.join(".") : "(root)";
+  return `schema violation at "${path}": ${issue.message}`;
 }
 
 function findDuplicateIds(model: GeneratorModel): string[] {
@@ -98,15 +134,29 @@ function findSelfLoops(agents: readonly AgentDefinition[]): string[] {
   return errors;
 }
 
-const TRIAGE_FORBIDDEN_CAPABILITIES = ["diagnostic.run", "remediation.apply"] as const;
+/**
+ * Role -> forbidden capabilities. Per the feature document's role
+ * definitions, triage holds create/read/update/audit only, and escalation
+ * explicitly "holds neither" `diagnostic.run` nor `remediation.apply` — the
+ * same two capabilities triage must not hold. Keeping this as a table
+ * (rather than a `role !== "triage"` special case) makes escalation's rule
+ * a normal entry instead of a second, easy-to-forget check, and is the
+ * natural place to add a future role's restrictions.
+ */
+const FORBIDDEN_CAPABILITIES_BY_ROLE: Readonly<Record<AgentRole, readonly Capability[]>> = {
+  triage: ["diagnostic.run", "remediation.apply"],
+  diagnostic: [],
+  escalation: ["diagnostic.run", "remediation.apply"],
+};
 
-function findTriageCapabilityViolations(agents: readonly AgentDefinition[]): string[] {
+function findForbiddenCapabilityViolations(agents: readonly AgentDefinition[]): string[] {
   const errors: string[] = [];
   for (const agent of agents) {
-    if (agent.role !== "triage") continue;
-    for (const forbidden of TRIAGE_FORBIDDEN_CAPABILITIES) {
+    for (const forbidden of FORBIDDEN_CAPABILITIES_BY_ROLE[agent.role]) {
       if (agent.capabilities.includes(forbidden)) {
-        errors.push(`triage agent "${agent.id}" may not hold capability "${forbidden}"`);
+        errors.push(
+          `agent "${agent.id}" has role "${agent.role}", which may not hold capability "${forbidden}"`,
+        );
       }
     }
   }

@@ -113,13 +113,29 @@ describe("validateModel: table-driven rule checks", () => {
       name: "triage holding diagnostic.run",
       model: model({ agents: [agent({ id: "triage", capabilities: ["diagnostic.run"] })] }),
       expectOk: false,
-      errorIncludes: "triage",
+      errorIncludes: "diagnostic.run",
     },
     {
       name: "triage holding remediation.apply",
       model: model({ agents: [agent({ id: "triage", capabilities: ["remediation.apply"] })] }),
       expectOk: false,
-      errorIncludes: "triage",
+      errorIncludes: "remediation.apply",
+    },
+    {
+      name: "escalation holding diagnostic.run",
+      model: model({
+        agents: [agent({ id: "escalation", role: "escalation", capabilities: ["diagnostic.run"] })],
+      }),
+      expectOk: false,
+      errorIncludes: "diagnostic.run",
+    },
+    {
+      name: "escalation holding remediation.apply",
+      model: model({
+        agents: [agent({ id: "escalation", role: "escalation", capabilities: ["remediation.apply"] })],
+      }),
+      expectOk: false,
+      errorIncludes: "remediation.apply",
     },
     {
       name: "diagnostic holding diagnostic.run and remediation.apply is fine",
@@ -149,6 +165,43 @@ describe("validateModel: table-driven rule checks", () => {
     } else {
       expect(result.errors).toEqual([]);
     }
+  });
+});
+
+describe("validateModel: runs the zod schema before the graph/template checks", () => {
+  it("reports a non-kebab-case agent id as a schema violation", () => {
+    const result = validateModel(model({ agents: [agent({ id: "Triage_Agent" })] }));
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((e) => e.includes("schema violation"))).toBe(true);
+    expect(result.errors.some((e) => e.includes("kebab-case"))).toBe(true);
+  });
+
+  it("skips the graph/template checks once the schema itself fails, rather than trusting untyped data", () => {
+    // This agent is both schema-invalid (bad id) AND would trip the
+    // self-loop graph check if that check ran on it. Only the schema
+    // violation should be reported: once the model fails its own shape
+    // check, the graph checks below assume well-typed data they no longer
+    // have, so validateModel does not run them.
+    const result = validateModel(model({ agents: [agent({ id: "Bad_Id", handoffs: ["Bad_Id"] })] }));
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((e) => e.includes("schema violation"))).toBe(true);
+    expect(result.errors.some((e) => e.includes("self-loop"))).toBe(false);
+    expect(result.longestHandoffPath).toBe(0);
+  });
+
+  it("still runs the graph checks when every agent/prompt is individually schema-valid (existing collect-all-errors behavior)", () => {
+    // Duplicate ids, unknown handoff targets, cycles etc. are not shape
+    // violations zod can see (each agent/prompt is individually valid) -
+    // they are cross-item graph rules validateModel must still enforce.
+    const result = validateModel(
+      model({
+        agents: [agent({ id: "triage", handoffs: ["ghost"] }), agent({ id: "triage", role: "diagnostic" })],
+      }),
+    );
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((e) => e.includes("duplicate id"))).toBe(true);
+    expect(result.errors.some((e) => e.includes("unknown agent"))).toBe(true);
+    expect(result.errors.some((e) => e.includes("schema violation"))).toBe(false);
   });
 });
 
