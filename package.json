@@ -15,6 +15,7 @@
     "start": "node dist/src/app/mcp/main.js",
     "generate": "tsx tools/generator/cli.ts",
     "generate:check": "tsx tools/generator/cli.ts --check",
+    "probe": "tsx scripts/connectivity-probe.ts",
     "prepare": "npm run build"
   },
   "dependencies": {
