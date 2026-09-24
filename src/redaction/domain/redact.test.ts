@@ -29,6 +29,15 @@ describe("redact", () => {
     expect(findings).toEqual([{ kind: "JWT", count: 1 }]);
   });
 
+  it("only exempts internal ids with their exact length, not any prefixed hex string", () => {
+    // A 48-hex value that merely starts with an internal prefix is not one of
+    // this system's ids (those are exactly 32 hex chars) and must be redacted.
+    const lookalike = "run_" + "0123456789abcdef".repeat(3);
+    const { text: redacted } = redact(`value ${lookalike} leaked`);
+    expect(redacted).not.toContain(lookalike);
+    expect(redacted).toContain("[REDACTED:HIGH_ENTROPY]");
+  });
+
   it("redacts multiple distinct findings and tallies counts per kind", () => {
     const text = "email a@example.com and email b@example.com, password is Hunter2024!";
     const { findings } = redact(text);

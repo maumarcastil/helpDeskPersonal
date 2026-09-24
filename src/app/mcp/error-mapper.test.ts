@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import { domainError, type DomainErrorCode } from "../../shared/domain/domain-error.js";
 import { mapDomainError, mapUnexpectedError } from "./error-mapper.js";
+import type { ToolErrorEnvelope } from "./error-mapper.js";
+
+function errorEnvelope(structuredContent: unknown): ToolErrorEnvelope["error"] {
+  return (structuredContent as ToolErrorEnvelope).error;
+}
 
 const ALL_CODES: DomainErrorCode[] = [
   "VALIDATION_ERROR",
@@ -47,8 +52,8 @@ describe("mapUnexpectedError", () => {
       const result = mapUnexpectedError(thrown);
 
       expect(result.isError).toBe(true);
-      expect(result.structuredContent.error.code).toBe("INTERNAL_ERROR");
-      expect(result.structuredContent.error.message).not.toContain("boom");
+      expect(errorEnvelope(result.structuredContent).code).toBe("INTERNAL_ERROR");
+      expect(errorEnvelope(result.structuredContent).message).not.toContain("boom");
       expect(JSON.stringify(result)).not.toMatch(/at .*\(.*:\d+:\d+\)/);
 
       expect(stderrSpy).toHaveBeenCalled();
@@ -63,7 +68,7 @@ describe("mapUnexpectedError", () => {
     const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     try {
       const result = mapUnexpectedError("just a string");
-      expect(result.structuredContent.error.code).toBe("INTERNAL_ERROR");
+      expect(errorEnvelope(result.structuredContent).code).toBe("INTERNAL_ERROR");
     } finally {
       stderrSpy.mockRestore();
     }

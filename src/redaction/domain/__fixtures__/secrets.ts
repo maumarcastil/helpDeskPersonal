@@ -166,4 +166,13 @@ export const NEGATIVE_FIXTURES: readonly string[] = [
   "only 42 users were affected",
   "the queue had 12345 pending jobs",
   "server room is on floor 3",
+  // This system's own opaque ids (CryptoIdGenerator: `<prefix>_` + 32 hex
+  // chars) are 36-character contiguous tokens spanning 3 character classes
+  // (lowercase, digit, underscore) — long and varied enough to otherwise
+  // trip HIGH_ENTROPY's generic heuristic. They are identifiers, not
+  // secrets, and every MCP tool response redacts its full payload
+  // (task 4.5 "defense in depth"), so a false positive here would corrupt
+  // every ticket/run/audit id a client receives.
+  "related ticket tkt_0123456789abcdef0123456789abcdef was already resolved",
+  "diagnostic run aud_fedcba9876543210fedcba9876543210 recorded the decision",
 ];

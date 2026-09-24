@@ -1,7 +1,7 @@
 import { recordAuditEntry } from "../../audit/application/audit-recorder.js";
 import type { AuditLog } from "../../audit/ports/audit-log.js";
 import { domainError, type DomainError } from "../../shared/domain/domain-error.js";
-import type { RunId, TicketId } from "../../shared/domain/ids.js";
+import type { AuditId, RunId, TicketId } from "../../shared/domain/ids.js";
 import { err, ok, type Result } from "../../shared/kernel/result.js";
 import type { Clock } from "../../shared/ports/clock.js";
 import type { IdGenerator } from "../../shared/ports/id-generator.js";
@@ -26,6 +26,10 @@ export interface ApplyRemediationOutput {
   readonly ticket: Ticket;
   readonly action: RemediationAction;
   readonly userMessage: string;
+  /** The id of the `remediation.applied` audit entry this call appended
+   *  (design "MCP tools" -> `apply_remediation` output: `{ticket, action,
+   *  userMessage, auditRef}`). */
+  readonly auditRef: AuditId;
 }
 
 /**
@@ -120,5 +124,10 @@ export async function applyRemediation(
     return saveResult;
   }
 
-  return ok({ ticket: updatedTicket, action: entry.action, userMessage: entry.userMessage });
+  return ok({
+    ticket: updatedTicket,
+    action: entry.action,
+    userMessage: entry.userMessage,
+    auditRef,
+  });
 }
