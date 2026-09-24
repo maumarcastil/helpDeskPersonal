@@ -26,9 +26,11 @@ function readPackageJson(): PackageJson {
 }
 
 /** Backticked repo-relative paths: a known top-level directory prefix, a
- *  dot-directory (`.claude/...`), or a known root config/doc file. */
+ *  dot-directory (`.claude/...`), or a known root config/doc file. `data/`
+ *  is deliberately not a prefix: it is gitignored runtime state created by
+ *  the server on first write, so it is absent on a clean checkout and in CI. */
 const PATH_TOKEN =
-  /`((?:src|scripts|config|docs|tools|data)\/[\w./-]*|\.(?:claude|github|opencode|vscode)\/[\w./-]*|package\.json|AGENTS\.md|CLAUDE\.md|README\.md|\.mcp\.json|opencode\.json|tsconfig(?:\.build)?\.json|vitest\.config\.ts)`/g;
+  /`((?:src|scripts|config|docs|tools)\/[\w./-]*|\.(?:claude|github|opencode|vscode)\/[\w./-]*|package\.json|AGENTS\.md|CLAUDE\.md|README\.md|\.mcp\.json|opencode\.json|tsconfig(?:\.build)?\.json|vitest\.config\.ts)`/g;
 
 function referencedPaths(markdown: string): string[] {
   return [...new Set([...markdown.matchAll(PATH_TOKEN)].map((m) => m[1] as string))];
