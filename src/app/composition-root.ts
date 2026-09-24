@@ -1,3 +1,4 @@
+import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { recordAuditEntry } from "../audit/application/audit-recorder.js";
 import { NodeSha256Hasher } from "../audit/infrastructure/node-sha256-hasher.js";
@@ -99,6 +100,16 @@ export interface BuiltApp {
 
 function buildDefaultPorts(config: AppConfig, overrides: Partial<Ports>): Ports {
   const hasher = overrides.hasher ?? new NodeSha256Hasher();
+
+  // A fresh checkout has no `data/` directory at all - without this, the
+  // very first write (either adapter, whichever runs first) fails with
+  // ENOENT before the server can serve a single tool call. Only needed
+  // when at least one of the two file-backed ports isn't overridden by a
+  // test double, and only ever touches the real filesystem in that case.
+  if (overrides.ticketRepository === undefined || overrides.auditLog === undefined) {
+    mkdirSync(config.dataDir, { recursive: true });
+  }
+
   return {
     clock: overrides.clock ?? new SystemClock(),
     idGenerator: overrides.idGenerator ?? new CryptoIdGenerator(),

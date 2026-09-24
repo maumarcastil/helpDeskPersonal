@@ -142,6 +142,31 @@ describe("buildApp", () => {
     }
   });
 
+  it("creates a not-yet-existing dataDir before constructing the default repository/audit-log adapters", async () => {
+    const parentTmp = mkdtempSync(join(tmpdir(), "helpdesk-composition-root-datadir-"));
+    // A nested, not-yet-created directory - simulates a fresh checkout
+    // where HELPDESK_DATA_DIR (default "data") does not exist yet.
+    const notYetCreatedDataDir = join(parentTmp, "nested", "data");
+    try {
+      const config = realConfig({ HELPDESK_DATA_DIR: notYetCreatedDataDir });
+      const { useCases } = buildApp(config);
+
+      const created = await useCases.createTicket({ text: "hello" });
+      expect(created.ok).toBe(true);
+      if (!created.ok) throw new Error("unreachable");
+
+      const auditNote = await useCases.appendAuditNote({
+        ticketId: created.value.ticket.id,
+        actor: "user",
+        kind: "note",
+        message: "a note",
+      });
+      expect(auditNote.ok).toBe(true);
+    } finally {
+      rmSync(parentTmp, { recursive: true, force: true });
+    }
+  });
+
   describe("HELPDESK_PSEUDONYM_KEY absent", () => {
     it("appends exactly one config.warning audit entry, even across repeated buildApp calls", async () => {
       __resetConfigWarningLatchForTests();
