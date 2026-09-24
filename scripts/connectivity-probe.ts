@@ -189,9 +189,17 @@ async function mockReport(
   scenario: MockScenario,
 ): Promise<{ status: number; body?: string }> {
   if (scenario === "hang") {
-    await new Promise((resolve) => setTimeout(resolve, timeoutMs + HANG_BUFFER_MS));
-    // Returning exit 0 here is wrong by design — the parent runner is
-    // the one that should kill us. We just stall until then.
+    // Stall past any reasonable runner grace window. Three balances
+    // three test scenarios:
+    //   - 3.5 standalone: vitest test timeout 5000ms, the script must
+    //     eventually exit on its own so the test can complete.
+    //   - 3.6 runner-driven (timeoutMs=200, default graceMs=1000):
+    //     runner SIGKILLs at ~1200ms, so the script's sleep must
+    //     exceed that to keep the SIGKILL path authoritative.
+    //   - 3.6 runner-driven with very small timeoutMs: total hang
+    //     plus any setup must still fit within vitest's 10s budget.
+    // Choosing 3000ms satisfies all three.
+    await new Promise((resolve) => setTimeout(resolve, 3000));
     return { status: 1 };
   }
   if (scenario === "crash") {
