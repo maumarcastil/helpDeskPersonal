@@ -236,3 +236,90 @@ describe("architecture: domain/application/shared never import a capability's in
     expect(offenders).toEqual([]);
   });
 });
+
+/**
+ * Phase 3 (PR B) extension: the boundary between executable scripts
+ * (`scripts/**`) and the rest of the codebase. Two guards:
+ *
+ *  1. `scripts/**` may NOT reach into a capability's `infrastructure/`
+ *     adapter (it'd bypass the runner layer — the script's whole point
+ *     is to run as a subprocess so an adversary who tampers with the
+ *     catalog or runner cannot also poison the script). The probe
+ *     script reads the report schema from `src/diagnostics/domain/`
+ *     and shared utilities from `src/shared/`; nothing else.
+ *  2. No file under `src/**` may import from `scripts/**`. `scripts/`
+ *     is a leaf — it is invoked as a subprocess by the runner, never
+ *     imported by library code. A `src/` file that imports a script
+ *     would couple library code to a file path that is not part of
+ *     the npm package's published surface, which is a portability
+ *     time bomb.
+ *
+ * These rules were extended (not rewritten) in Phase 3 (task 3.7)
+ * because tests for the connector scripts did not exist when the
+ * architecture guard was first written (ADR 0013 covers only
+ * `src/**`).
+ */
+describe("architecture: scripts/ boundary", () => {
+  function listScriptFiles(): string[] {
+    return listFiles("scripts");
+  }
+
+  it("no file under scripts/** imports a capability's infrastructure/ (scripts bypass the runner layer if they do)", () => {
+    const files = listScriptFiles();
+    expect(files.length).toBeGreaterThan(0);
+
+    const offenders: string[] = [];
+    for (const file of files) {
+      const specifiers = importSpecifiers(readFileSync(file, "utf8"));
+      for (const specifier of specifiers) {
+        const isCapabilityInfrastructure =
+          specifier.includes("/infrastructure/") || specifier.endsWith("/infrastructure");
+        // The shared/ ports/ adapters like HmacPseudonymizer live under
+        // `src/redaction/infrastructure/` — caught by the rule above.
+        // `src/app/system/*` adapters are also reachable from `src/app/`,
+        // but scripts must not reach into them either: phase 4's
+        // composition root is the only consumer.
+        if (isCapabilityInfrastructure || specifier.includes("/app/system/")) {
+          offenders.push(`${file} imports "${specifier}"`);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it("no file under src/** imports from scripts/** (scripts are invoked as subprocesses, never imported by library code)", () => {
+    const files = listFiles("src");
+    expect(files.length).toBeGreaterThan(0);
+
+    const offenders: string[] = [];
+    for (const file of files) {
+      const specifiers = importSpecifiers(readFileSync(file, "utf8"));
+      for (const specifier of specifiers) {
+        if (specifier.includes("scripts/") || specifier.startsWith("scripts/")) {
+          offenders.push(`${file} imports "${specifier}"`);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it("scripts/ may import from src/diagnostics/domain/ and src/shared/ (sanity check that the probe contract is wireable)", () => {
+    // The connectivity probe reads the DiagnosticReportSchema from
+    // src/diagnostics/domain and would reasonably import shared
+    // utilities. There is no direct "must import these" assertion —
+    // instead, the test confirms at least one script exists that is
+    // currently doing so, so the import-resolution path has been
+    // exercised. Future regressions that move the schema out of
+    // diagnostics/domain will break the probe script's build, not
+    // this test.
+    const files = listScriptFiles();
+    const scriptImportingDomain = files.some((file) => {
+      const specifiers = importSpecifiers(readFileSync(file, "utf8"));
+      return specifiers.some(
+        (specifier) =>
+          specifier.includes("/diagnostics/domain/") || specifier.includes("/shared/"),
+      );
+    });
+    expect(scriptImportingDomain).toBe(true);
+  });
+});
